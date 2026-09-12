@@ -8,10 +8,19 @@ export type ExecutionStatus = 'RUNNING' | 'PAUSED' | 'COMPLETED' | 'TIMED_OUT' |
 export type RealtimeExecutionEvent = { type: 'workflow.started' | 'workflow.completed' | 'workflow.failed' | 'task.scheduled' | 'task.started' | 'task.completed' | 'task.retrying'; executionId: string; taskReferenceName?: string; at: string; status?: ExecutionStatus }
 export type ExecutionRecord = { executionId: string; workflowName: string; version: number; status: ExecutionStatus; input: unknown; events: ExecutionTaskEvent[]; startedAt: string; completedAt?: string; correlationId?: string; priority?: number; executionName?: string; metadata?: Record<string, string>; idempotencyKey?: string }
 export type WorkflowDefinitionRecord = { name: string; description: string; version: number; status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED'; updatedAt: string; taskCount: number; workflow?: WorkflowSettings; nodes?: StudioNode[]; edges?: Edge[] }
+export type TaskDefinitionRecord = { name: string; description: string; owner: string; timeoutSeconds: number; retryCount: number; updatedAt: string; status: 'ACTIVE' | 'PAUSED' }
+export type EventHandlerRecord = { name: string; event: string; action: string; workflowName: string; active: boolean; updatedAt: string }
+export type ScheduleRecord = { name: string; workflowName: string; cronExpression: string; timezone: string; active: boolean; nextRun: string; updatedAt: string }
+export type QueueRecord = { queue: string; taskType: string; inProgress: number; unprocessed: number; rateLimit: number; updatedAt: string }
+export type EventRecord = { id: string; event: string; status: 'RECEIVED' | 'PROCESSED' | 'FAILED'; source: string; receivedAt: string; payload: unknown }
 
 const executionByKey = new Map<string, ExecutionRecord>()
 const executionControllers = new Map<string, { record: ExecutionRecord; paused: boolean; terminated: boolean; onEvent: (event: ExecutionTaskEvent) => void; onRealtimeEvent?: (event: RealtimeExecutionEvent) => void }>()
 const workflowStorageKey = 'orkes-workflow-definitions-v1'
+const executionStorageKey = 'orkes-executions-v1'
+const taskDefinitionStorageKey = 'orkes-task-definitions-v1'
+const eventHandlerStorageKey = 'orkes-event-handlers-v1'
+const scheduleStorageKey = 'orkes-schedules-v1'
 const seedWorkflowDefinitions: WorkflowDefinitionRecord[] = [
   { name: 'api_polling_workflow', description: 'Poll a remote API until a condition is met.', version: 1, status: 'PUBLISHED', updatedAt: 'Just now', taskCount: 10 },
   { name: 'endpoint_health_monitor', description: 'Monitor an HTTP endpoint and route health outcomes.', version: 3, status: 'PUBLISHED', updatedAt: '3 hours ago', taskCount: 7 },
@@ -32,6 +41,23 @@ function writeWorkflowDefinitions(definitions: WorkflowDefinitionRecord[]) {
   if (typeof window !== 'undefined') window.localStorage.setItem(workflowStorageKey, JSON.stringify(definitions))
 }
 
+function readStored<T>(key: string, fallback: T[]): T[] {
+  if (typeof window === 'undefined') return fallback
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(key) ?? 'null') as unknown
+    return Array.isArray(parsed) ? parsed as T[] : fallback
+  } catch { return fallback }
+}
+
+function writeStored<T>(key: string, value: T[]) {
+  if (typeof window !== 'undefined') window.localStorage.setItem(key, JSON.stringify(value))
+}
+
+function persistExecution(record: ExecutionRecord) {
+  const records = readStored<ExecutionRecord>(executionStorageKey, [])
+  writeStored(executionStorageKey, [record, ...records.filter((item) => item.executionId !== record.executionId)].slice(0, 100))
+}
+
 export const workflowApi = {
   getTaskCatalog(): Promise<TaskCatalogItem[]> {
     return Promise.resolve(taskCatalog)
@@ -47,6 +73,72 @@ export const workflowApi = {
 
   getWorkflowDefinition(name: string): Promise<WorkflowDefinitionRecord | null> {
     return Promise.resolve(readWorkflowDefinitions().find((item) => item.name === name) ?? null)
+  },
+
+  listExecutions(): Promise<ExecutionRecord[]> {
+    const stored = readStored<ExecutionRecord>(executionStorageKey, [])
+    const records = [...executionByKey.values(), ...stored]
+    const unique = new Map(records.map((record) => [record.executionId, record]))
+    return Promise.resolve([...unique.values()].sort((left, right) => right.startedAt.localeCompare(left.startedAt)))
+  },
+
+  getExecution(executionId: string): Promise<ExecutionRecord | null> {
+    return this.listExecutions().then((records) => records.find((record) => record.executionId === executionId) ?? null)
+  },
+
+  listTaskDefinitions(): Promise<TaskDefinitionRecord[]> {
+    return Promise.resolve(readStored<TaskDefinitionRecord>(taskDefinitionStorageKey, [
+      { name: 'http_request', description: 'Invoke an external HTTP endpoint.', owner: 'platform', timeoutSeconds: 60, retryCount: 3, updatedAt: 'Today', status: 'ACTIVE' },
+      { name: 'check_status', description: 'Poll and evaluate a job status.', owner: 'platform', timeoutSeconds: 30, retryCount: 2, updatedAt: 'Yesterday', status: 'ACTIVE' },
+    ]))
+  },
+
+  saveTaskDefinition(definition: TaskDefinitionRecord) {
+    const items = readStored<TaskDefinitionRecord>(taskDefinitionStorageKey, [])
+    writeStored(taskDefinitionStorageKey, [...items.filter((item) => item.name !== definition.name), definition])
+    return Promise.resolve(definition)
+  },
+
+  listEventHandlers(): Promise<EventHandlerRecord[]> {
+    return Promise.resolve(readStored<EventHandlerRecord>(eventHandlerStorageKey, [
+      { name: 'job_completed_handler', event: 'job.completed', action: 'START_WORKFLOW', workflowName: 'api_polling_workflow', active: true, updatedAt: 'Today' },
+      { name: 'job_failed_handler', event: 'job.failed', action: 'PUBLISH_EVENT', workflowName: 'endpoint_health_monitor', active: false, updatedAt: '3 hours ago' },
+    ]))
+  },
+
+  saveEventHandler(handler: EventHandlerRecord) {
+    const items = readStored<EventHandlerRecord>(eventHandlerStorageKey, [])
+    writeStored(eventHandlerStorageKey, [...items.filter((item) => item.name !== handler.name), handler])
+    return Promise.resolve(handler)
+  },
+
+  listSchedules(): Promise<ScheduleRecord[]> {
+    return Promise.resolve(readStored<ScheduleRecord>(scheduleStorageKey, [
+      { name: 'health_monitor_every_5m', workflowName: 'endpoint_health_monitor', cronExpression: '0 */5 * * * *', timezone: 'UTC', active: true, nextRun: 'In 4 minutes', updatedAt: 'Today' },
+      { name: 'billing_daily', workflowName: 'payment_and_subscription_flow', cronExpression: '0 0 8 * * *', timezone: 'Europe/Istanbul', active: false, nextRun: 'Paused', updatedAt: 'Yesterday' },
+    ]))
+  },
+
+  saveSchedule(schedule: ScheduleRecord) {
+    const items = readStored<ScheduleRecord>(scheduleStorageKey, [])
+    writeStored(scheduleStorageKey, [...items.filter((item) => item.name !== schedule.name), schedule])
+    return Promise.resolve(schedule)
+  },
+
+  listQueues(): Promise<QueueRecord[]> {
+    return Promise.resolve([
+      { queue: 'http_request', taskType: 'HTTP', inProgress: 2, unprocessed: 14, rateLimit: 50, updatedAt: 'Now' },
+      { queue: 'check_status', taskType: 'SIMPLE', inProgress: 1, unprocessed: 4, rateLimit: 25, updatedAt: 'Now' },
+      { queue: 'notifications', taskType: 'EVENT', inProgress: 0, unprocessed: 0, rateLimit: 100, updatedAt: 'Now' },
+    ])
+  },
+
+  listEvents(): Promise<EventRecord[]> {
+    return Promise.resolve([
+      { id: 'evt-1003', event: 'job.completed', status: 'PROCESSED', source: 'worker-api', receivedAt: '2 minutes ago', payload: { jobId: 'job-1003', status: 'COMPLETED' } },
+      { id: 'evt-1002', event: 'job.failed', status: 'FAILED', source: 'worker-api', receivedAt: '18 minutes ago', payload: { jobId: 'job-1002', status: 'FAILED' } },
+      { id: 'evt-1001', event: 'payment.created', status: 'RECEIVED', source: 'payments', receivedAt: '34 minutes ago', payload: { paymentId: 'pay-1001' } },
+    ])
   },
 
   save(settings: WorkflowSettings, nodes: StudioNode[], edges: Edge[] = []) {
@@ -99,6 +191,7 @@ export const workflowApi = {
     const startedAt = new Date().toISOString()
     const record: ExecutionRecord = { executionId: `exec_${Date.now()}`, workflowName: input.workflowName, version: input.version, status: 'RUNNING', input: input.executionInput ?? {}, events: [], startedAt, correlationId: input.correlationId, priority: input.priority, executionName: input.executionName, metadata: input.metadata, idempotencyKey: input.idempotencyKey }
     executionByKey.set(input.idempotencyKey, record)
+    persistExecution(record)
     const controller = { record, paused: false, terminated: false, onEvent: input.onEvent, onRealtimeEvent: input.onRealtimeEvent }
     executionControllers.set(record.executionId, controller)
     input.onRealtimeEvent?.({ type: 'workflow.started', executionId: record.executionId, at: startedAt, status: record.status })
@@ -115,16 +208,19 @@ export const workflowApi = {
       globalThis.setTimeout(() => whenRunnable(() => {
         event.status = 'IN_PROGRESS'
         event.at = new Date().toISOString()
+        persistExecution(record)
         input.onEvent({ ...event })
         input.onRealtimeEvent?.({ type: 'task.started', executionId: record.executionId, taskReferenceName: task.data.ref, at: event.at })
         globalThis.setTimeout(() => whenRunnable(() => {
           event.status = 'COMPLETED'
           event.at = new Date().toISOString()
+          persistExecution(record)
           input.onEvent({ ...event })
           input.onRealtimeEvent?.({ type: 'task.completed', executionId: record.executionId, taskReferenceName: task.data.ref, at: event.at })
           if (index === input.tasks.length - 1) {
             record.status = 'COMPLETED'
             record.completedAt = event.at
+            persistExecution(record)
             executionControllers.delete(record.executionId)
             input.onRealtimeEvent?.({ type: 'workflow.completed', executionId: record.executionId, at: event.at, status: record.status })
           }
@@ -139,6 +235,7 @@ export const workflowApi = {
     if (!controller || controller.terminated || controller.record.status !== 'RUNNING') return Promise.reject(new Error('Execution is not running.'))
     controller.paused = true
     controller.record.status = 'PAUSED'
+    persistExecution(controller.record)
     return Promise.resolve({ ...controller.record })
   },
 
@@ -147,6 +244,7 @@ export const workflowApi = {
     if (!controller || controller.terminated || controller.record.status !== 'PAUSED') return Promise.reject(new Error('Execution is not paused.'))
     controller.paused = false
     controller.record.status = 'RUNNING'
+    persistExecution(controller.record)
     return Promise.resolve({ ...controller.record })
   },
 
@@ -156,6 +254,7 @@ export const workflowApi = {
     controller.terminated = true
     controller.record.status = 'TERMINATED'
     controller.record.completedAt = new Date().toISOString()
+    persistExecution(controller.record)
     controller.onRealtimeEvent?.({ type: 'workflow.failed', executionId, at: controller.record.completedAt, status: controller.record.status })
     executionControllers.delete(executionId)
     return Promise.resolve({ ...controller.record })

@@ -78,6 +78,29 @@ export type TaskConfig = {
   formKey?: string
   prompt?: string
   model?: string
+  llmProvider?: string
+  messages?: string
+  instructions?: string
+  promptName?: string
+  promptVariables?: string
+  temperature?: number
+  topP?: number
+  maxTokens?: number
+  stopWords?: string
+  jsonOutput?: string
+  vectorDB?: string
+  index?: string
+  namespace?: string
+  embeddingModelProvider?: string
+  embeddingModel?: string
+  embeddings?: string
+  dimensions?: number
+  docId?: string
+  query?: string
+  maxResults?: number
+  chunkOverlap?: number
+  mediaSize?: string
+  mediaDurationSeconds?: number
   subject?: string
   issuer?: string
   privateKey?: string
@@ -368,6 +391,11 @@ export function buildTaskInputParameters(kind: TaskKind, config?: TaskConfig): R
   if (kind === 'SENDGRID') { set('from', source.from); set('to', source.to); set('subject', source.subjectLine); set('contentType', source.contentType); set('content', source.content); set('sendgridConfiguration', source.sendgridConfiguration) }
   if (kind === 'CHUNK_TEXT') { set('text', source.text); set('chunkSize', source.chunkSize); set('mediaType', source.mediaType) }
   if (kind === 'INTEGRATION' || kind === 'MCP_REMOTE') { set('integrationName', source.integrationName); set('operation', source.operation) }
+  if (kind.startsWith('LLM_')) {
+    ;(['llmProvider', 'model', 'promptName', 'instructions', 'text', 'vectorDB', 'index', 'namespace', 'embeddingModelProvider', 'embeddingModel', 'docId', 'query', 'mediaType'] as const).forEach((key) => set(key, source[key]))
+    ;(['messages', 'promptVariables', 'stopWords', 'jsonOutput', 'embeddings'] as const).forEach((key) => set(key, parseConfigValue(source[key])))
+    ;(['temperature', 'topP', 'maxTokens', 'dimensions', 'maxResults', 'chunkSize', 'chunkOverlap'] as const).forEach((key) => set(key, source[key]))
+  }
   return params
 }
 

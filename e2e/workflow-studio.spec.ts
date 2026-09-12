@@ -107,6 +107,20 @@ test('shows canonical fields for Kafka, gRPC, rules, databases and secrets', asy
   await expect(page.getByText('Secret value', { exact: true })).toBeVisible()
 })
 
+test('shows task-specific LLM and retrieval fields', async ({ page }) => {
+  await page.addInitScript(() => window.localStorage.clear())
+  await page.goto('/')
+  await page.getByRole('button', { name: /LLM Chat Complete/ }).first().click()
+  await expect(page.getByText('LLM provider', { exact: true })).toBeVisible()
+  await expect(page.getByText('Messages (JSON array)', { exact: true })).toBeVisible()
+  await expect(page.getByText('Max tokens', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: /Add another task/ }).click()
+  await page.getByRole('button', { name: /LLM Search Index/ }).first().click()
+  await expect(page.getByText('Vector database', { exact: true })).toBeVisible()
+  await expect(page.getByText('Query', { exact: true })).toBeVisible()
+  await expect(page.getByText('Max results', { exact: true })).toBeVisible()
+})
+
 test('undo and redo restore task nodes together with their connections', async ({ page }) => {
   await page.addInitScript(() => window.localStorage.clear())
   await page.goto('/')
@@ -171,6 +185,26 @@ test('supports the workflow builder entry options from the definitions list', as
   await page.getByRole('button', { name: /Create blank/ }).click()
   await expect(page.getByText('new_workflow', { exact: true })).toBeVisible()
   await expect(page.locator('.canvas-ribbon')).toContainText('0 tasks')
+})
+
+test('navigates the supporting Conductor platform screens from the sidebar', async ({ page }) => {
+  await page.addInitScript(() => window.localStorage.clear())
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Queue Monitor', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Queue Monitor', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Event Monitor', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Event Monitor', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Task', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Task Definitions', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Event Handler', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Event Handlers', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Scheduler', exact: true }).last().click()
+  await expect(page.getByRole('heading', { name: 'Scheduler Definitions', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Schemas', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Schemas', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'APIs', exact: true }).click()
+  await page.getByRole('button', { name: 'Services', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'API Reference', exact: true })).toBeVisible()
 })
 
 test('persists saved workflows and exposes definition list actions', async ({ page }) => {
