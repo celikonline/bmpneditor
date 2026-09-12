@@ -205,6 +205,11 @@ test('navigates the supporting Conductor platform screens from the sidebar', asy
   await page.getByRole('button', { name: 'APIs', exact: true }).click()
   await page.getByRole('button', { name: 'Services', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'API Reference', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Agents', exact: true }).first().click()
+  await expect(page.getByRole('heading', { name: 'Agent Executions', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Access Control' }).click()
+  await page.getByRole('button', { name: 'Users', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Users', exact: true })).toBeVisible()
 })
 
 test('runs a workflow from the platform Run Workflow screen', async ({ page }) => {

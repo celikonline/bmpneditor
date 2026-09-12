@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Activity, Archive, Check, ChevronLeft, Clock3, Code2, Copy, FileJson, Filter, Globe2, Play, Plus, RefreshCw, Search, Server, Settings2, UsersRound, Workflow, X } from 'lucide-react'
 import { workflowApi, type EventHandlerRecord, type EventRecord, type ExecutionRecord, type QueueRecord, type ScheduleRecord, type TaskDefinitionRecord } from './workflowApi'
 
-export type PlatformView = 'executions' | 'execution-detail' | 'run-workflow' | 'queue' | 'events' | 'task-definitions' | 'event-handlers' | 'schedulers' | 'schemas' | 'api' | 'integrations' | 'access'
+export type PlatformView = 'executions' | 'execution-detail' | 'run-workflow' | 'queue' | 'events' | 'task-definitions' | 'event-handlers' | 'schedulers' | 'schemas' | 'api' | 'integrations' | 'access' | 'agents' | 'human-tasks' | 'workers' | 'user-forms' | 'secrets' | 'webhooks' | 'ai-prompts' | 'environment' | 'applications' | 'groups' | 'users' | 'authentication'
 
 type Navigation = (view: PlatformView) => void
 
@@ -16,6 +16,7 @@ export function PlatformPage({ view, onNavigate }: { view: PlatformView; onNavig
   if (view === 'schedulers') return <SchedulersPage />
   if (view === 'schemas') return <SchemasPage />
   if (view === 'api') return <ApiReferencePage />
+  if (view in resourceConfig) return <ResourceRegistryPage view={view as ResourceView} />
   return <PlatformPlaceholder view={view} onNavigate={onNavigate} />
 }
 
@@ -163,6 +164,34 @@ function ApiReferencePage() {
   const [query, setQuery] = useState('')
   const visible = endpoints.filter((endpoint) => `${endpoint.group} ${endpoint.method} ${endpoint.path} ${endpoint.desc}`.toLowerCase().includes(query.toLowerCase()))
   return <PageFrame eyebrow="API DOCS" title="API Reference" description="Explore the Conductor-compatible APIs exposed by this workspace." actions={<button className="outline-button" onClick={() => navigator.clipboard?.writeText('http://localhost:8080/api')}><Copy size={15} /> Copy base URL</button>}><Toolbar><SearchBox value={query} onChange={setQuery} placeholder="Search API operations..." /></Toolbar><div className="api-reference-list">{visible.map((endpoint) => <div className="api-operation" key={`${endpoint.method}-${endpoint.path}`}><div className={`api-method ${endpoint.method.toLowerCase()}`}>{endpoint.method}</div><div><strong>{endpoint.path}</strong><span>{endpoint.group} · {endpoint.desc}</span></div><button className="icon-button" aria-label={`Copy ${endpoint.path}`} onClick={() => navigator.clipboard?.writeText(endpoint.path)}><Copy size={15} /></button><ChevronLeft className="rotate-180" size={15} /></div>)}</div></PageFrame>
+}
+
+type ResourceView = Exclude<PlatformView, 'executions' | 'execution-detail' | 'run-workflow' | 'queue' | 'events' | 'task-definitions' | 'event-handlers' | 'schedulers' | 'schemas' | 'api' | 'integrations' | 'access'>
+type ResourceConfig = { eyebrow: string; title: string; description: string; noun: string; icon: typeof Activity; seeds: Array<{ name: string; detail: string; owner: string; status: 'ACTIVE' | 'PAUSED' }> }
+const resourceConfig: Partial<Record<ResourceView, ResourceConfig>> = {
+  agents: { eyebrow: 'EXECUTIONS / AGENTS', title: 'Agent Executions', description: 'Inspect agent runs, handoffs and current orchestration state.', noun: 'agent', icon: Activity, seeds: [{ name: 'news_research_agent', detail: 'Search and summarize external sources', owner: 'platform', status: 'ACTIVE' }] },
+  'human-tasks': { eyebrow: 'EXECUTIONS / HUMAN TASKS', title: 'Human Tasks', description: 'Review tasks waiting for human interaction and approvals.', noun: 'human task', icon: UsersRound, seeds: [{ name: 'approval-queue', detail: 'Awaiting operations approval', owner: 'operations', status: 'PAUSED' }] },
+  workers: { eyebrow: 'EXECUTIONS / WORKERS', title: 'Workers', description: 'Monitor registered workers and their heartbeat status.', noun: 'worker', icon: Server, seeds: [{ name: 'worker-api-01', detail: 'HTTP task worker · last poll just now', owner: 'platform', status: 'ACTIVE' }] },
+  'user-forms': { eyebrow: 'DEFINITIONS / USER FORMS', title: 'User Forms', description: 'Manage forms used by Human Task workflows.', noun: 'user form', icon: FileJson, seeds: [{ name: 'payment_approval_form', detail: 'Payment approval fields', owner: 'finance', status: 'ACTIVE' }] },
+  secrets: { eyebrow: 'DEFINITIONS / SECRETS', title: 'Secrets', description: 'Manage masked secret bindings available to workflows.', noun: 'secret', icon: Settings2, seeds: [{ name: 'HTTP_API_TOKEN', detail: 'Masked runtime secret', owner: 'platform', status: 'ACTIVE' }] },
+  webhooks: { eyebrow: 'DEFINITIONS / WEBHOOKS', title: 'Webhooks', description: 'Configure inbound callbacks for event-driven workflows.', noun: 'webhook', icon: Globe2, seeds: [{ name: 'job-status-callback', detail: 'POST /hooks/job-status', owner: 'platform', status: 'ACTIVE' }] },
+  'ai-prompts': { eyebrow: 'DEFINITIONS / AI PROMPTS', title: 'AI Prompts', description: 'Version and review reusable prompts for AI tasks.', noun: 'AI prompt', icon: Code2, seeds: [{ name: 'summarize_news_v1', detail: 'Summarize source articles with citations', owner: 'platform', status: 'ACTIVE' }] },
+  environment: { eyebrow: 'DEFINITIONS / ENVIRONMENT', title: 'Environment Variables', description: 'Manage runtime values referenced by workflow expressions.', noun: 'environment variable', icon: Settings2, seeds: [{ name: 'API_BASE_URL', detail: 'https://api.example.local', owner: 'platform', status: 'ACTIVE' }] },
+  applications: { eyebrow: 'ACCESS CONTROL / APPLICATIONS', title: 'Applications', description: 'Manage service accounts and application credentials.', noun: 'application', icon: UsersRound, seeds: [{ name: 'workflow-studio', detail: 'Editor service account', owner: 'platform', status: 'ACTIVE' }] },
+  groups: { eyebrow: 'ACCESS CONTROL / GROUPS', title: 'Groups', description: 'Organize workspace users and their permissions.', noun: 'group', icon: UsersRound, seeds: [{ name: 'workflow-operators', detail: 'Can run and inspect workflows', owner: 'platform', status: 'ACTIVE' }] },
+  users: { eyebrow: 'ACCESS CONTROL / USERS', title: 'Users', description: 'Review workspace identities and access status.', noun: 'user', icon: UsersRound, seeds: [{ name: 'celikonline@gmail.com', detail: 'Workspace owner', owner: 'platform', status: 'ACTIVE' }] },
+  authentication: { eyebrow: 'APIS / AUTHENTICATION', title: 'Authentication', description: 'Review API authentication methods and access tokens.', noun: 'auth method', icon: Settings2, seeds: [{ name: 'Bearer token', detail: 'API request authentication', owner: 'platform', status: 'ACTIVE' }] },
+}
+
+function ResourceRegistryPage({ view }: { view: ResourceView }) {
+  const config = resourceConfig[view]
+  const [items, setItems] = useState(config?.seeds ?? [])
+  const [query, setQuery] = useState('')
+  if (!config) return null
+  const visible = items.filter((item) => `${item.name} ${item.detail} ${item.owner} ${item.status}`.toLowerCase().includes(query.toLowerCase()))
+  const add = () => setItems((current) => [...current, { name: `new_${view.replaceAll('-', '_')}_${current.length + 1}`, detail: `New ${config.noun} ready for configuration`, owner: 'platform', status: 'PAUSED' }])
+  const Icon = config.icon
+  return <PageFrame eyebrow={config.eyebrow} title={config.title} description={config.description} actions={<button className="primary-action" onClick={add}><Plus size={15} /> New {config.noun}</button>}><Toolbar><SearchBox value={query} onChange={setQuery} placeholder={`Search ${config.title.toLowerCase()}...`} /><span className="toolbar-count">{visible.length} items</span></Toolbar><div className="platform-card"><div className="platform-table"><div className="platform-table-head"><span>Name</span><span>Details</span><span>Owner</span><span>Status</span><span>Updated</span><span /></div>{visible.length === 0 ? <EmptyState icon={Icon} title={`No ${config.title.toLowerCase()} found`} detail="Create a resource or adjust your search." /> : visible.map((item) => <div className="platform-table-row static" key={item.name}><span><strong>{item.name}</strong><small>{item.detail}</small></span><span>{item.detail}</span><span>{item.owner}</span><span><StatusPill value={item.status} /></span><span>Just now</span><span /></div>)}</div></div></PageFrame>
 }
 
 function PlatformPlaceholder({ view, onNavigate }: { view: PlatformView; onNavigate: Navigation }) {
