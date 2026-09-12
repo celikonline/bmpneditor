@@ -6,7 +6,8 @@ export type TaskExecutionStatus = 'SCHEDULED' | 'IN_PROGRESS' | 'SKIPPED' | 'TIM
 export type ExecutionTaskEvent = { taskReferenceName: string; status: TaskExecutionStatus; at: string; reasonForIncompletion?: string; retryCount?: number; workerId?: string }
 export type ExecutionStatus = 'RUNNING' | 'PAUSED' | 'COMPLETED' | 'TIMED_OUT' | 'TERMINATED' | 'FAILED'
 export type RealtimeExecutionEvent = { type: 'workflow.started' | 'workflow.completed' | 'workflow.failed' | 'task.scheduled' | 'task.started' | 'task.completed' | 'task.retrying'; executionId: string; taskReferenceName?: string; at: string; status?: ExecutionStatus }
-export type ExecutionRecord = { executionId: string; workflowName: string; version: number; status: ExecutionStatus; input: unknown; events: ExecutionTaskEvent[]; startedAt: string; completedAt?: string; correlationId?: string; priority?: number; executionName?: string; metadata?: Record<string, string>; idempotencyKey?: string; tasks?: StudioNode[] }
+export type ExecutionSignal = { name: string; payload: unknown; at: string }
+export type ExecutionRecord = { executionId: string; workflowName: string; version: number; status: ExecutionStatus; input: unknown; events: ExecutionTaskEvent[]; startedAt: string; completedAt?: string; correlationId?: string; priority?: number; executionName?: string; metadata?: Record<string, string>; idempotencyKey?: string; tasks?: StudioNode[]; signals?: ExecutionSignal[] }
 export type WorkflowDefinitionRecord = { name: string; description: string; version: number; status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED'; updatedAt: string; taskCount: number; workflow?: WorkflowSettings; nodes?: StudioNode[]; edges?: Edge[] }
 export type TaskDefinitionRecord = { name: string; description: string; owner: string; timeoutSeconds: number; retryCount: number; retryLogic?: 'FIXED' | 'EXPONENTIAL_BACKOFF' | 'LINEAR_BACKOFF'; retryDelaySeconds?: number; maxRetryDelaySeconds?: number; backoffJitterMs?: number; totalTimeoutSeconds?: number; responseTimeoutSeconds?: number; pollTimeoutSeconds?: number; updatedAt: string; status: 'ACTIVE' | 'PAUSED' }
 export type EventHandlerRecord = { name: string; event: string; action: string; workflowName: string; active: boolean; updatedAt: string }
@@ -288,6 +289,20 @@ export const workflowApi = {
     controller.record.status = 'RUNNING'
     persistExecution(controller.record)
     return Promise.resolve({ ...controller.record })
+  },
+
+  signalExecution(executionId: string, name: string, payload: unknown = {}) {
+    return this.getExecution(executionId).then((record) => {
+      if (!record) throw new Error('Execution was not found.')
+      if (['COMPLETED', 'TERMINATED', 'FAILED'].includes(record.status)) throw new Error('A signal can only be sent to an active execution.')
+      const signal: ExecutionSignal = { name: name.trim(), payload, at: new Date().toISOString() }
+      if (!signal.name) throw new Error('Signal name is required.')
+      record.signals = [...(record.signals ?? []), signal]
+      const controller = executionControllers.get(executionId)
+      if (controller?.paused) { controller.paused = false; record.status = 'RUNNING' }
+      persistExecution(record)
+      return { ...record }
+    })
   },
 
   terminateExecution(executionId: string) {

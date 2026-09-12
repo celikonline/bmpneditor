@@ -287,6 +287,22 @@ test('replays an event into a workflow execution', async ({ page }) => {
   await expect(page.getByText('Event replay started:', { exact: false })).toBeVisible()
 })
 
+test('sends a signal to an active execution', async ({ page }) => {
+  await page.addInitScript(() => { if (!window.sessionStorage.getItem('signal-test-started')) { window.localStorage.clear(); window.sessionStorage.setItem('signal-test-started', '1') } })
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Execute', exact: true }).click()
+  await page.getByRole('button', { name: 'Start execution', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Workflow is running', exact: true })).toBeVisible()
+  await page.goto('/executions')
+  await page.getByRole('button', { name: /api_polling_workflow/ }).first().click()
+  await page.getByRole('button', { name: 'Send signal', exact: true }).click()
+  await page.getByLabel('Signal name').fill('job.completed')
+  await page.getByLabel('Payload (JSON)').fill('{"jobId":"job-42"}')
+  await page.getByRole('button', { name: 'Send signal', exact: true }).last().click()
+  await page.getByRole('button', { name: 'JSON', exact: true }).click()
+  await expect(page.locator('.execution-json')).toContainText('job.completed')
+})
+
 test('runs a workflow from the platform Run Workflow screen', async ({ page }) => {
   await page.addInitScript(() => window.localStorage.clear())
   await page.goto('/runWorkflow')

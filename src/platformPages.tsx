@@ -74,6 +74,7 @@ function ExecutionDetail({ record, onBack }: { record: ExecutionRecord; onBack: 
   const [error, setError] = useState('')
   const [tab, setTab] = useState<'Tasks' | 'Diagram' | 'Timeline' | 'Summary' | 'Input/Output' | 'JSON'>('Tasks')
   const [selectedTask, setSelectedTask] = useState<ExecutionRecord['events'][number] | null>(null)
+  const [signalOpen, setSignalOpen] = useState(false)
   const refresh = () => { void workflowApi.getExecution(current.executionId).then((next) => { if (next) setCurrent(next) }) }
   useEffect(() => {
     if (!['RUNNING', 'PAUSED'].includes(current.status)) return undefined
@@ -85,7 +86,7 @@ function ExecutionDetail({ record, onBack }: { record: ExecutionRecord; onBack: 
     setError('')
     void operation().then(setCurrent).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'Execution operation failed.')).finally(() => setBusy(false))
   }
-  const actions = <><button className="outline-button" onClick={refresh} disabled={busy}><RefreshCw size={15} /> Refresh</button>{current.status === 'RUNNING' && <button className="outline-button" onClick={() => operate(() => workflowApi.pauseExecution(current.executionId))} disabled={busy}>Pause</button>}{current.status === 'PAUSED' && <button className="primary-action" onClick={() => operate(() => workflowApi.resumeExecution(current.executionId))} disabled={busy}>Resume</button>}{['RUNNING', 'PAUSED'].includes(current.status) && <button className="danger-button" onClick={() => operate(() => workflowApi.terminateExecution(current.executionId))} disabled={busy}>Terminate</button>}{['COMPLETED', 'FAILED', 'TERMINATED', 'TIMED_OUT'].includes(current.status) && <button className="outline-button" onClick={() => operate(() => workflowApi.retryExecution(current.executionId))} disabled={busy}>Retry</button>}<button className="outline-button" onClick={onBack}><ChevronLeft size={15} /> Back</button></>
+  const actions = <><button className="outline-button" onClick={refresh} disabled={busy}><RefreshCw size={15} /> Refresh</button>{current.status === 'RUNNING' && <button className="outline-button" onClick={() => operate(() => workflowApi.pauseExecution(current.executionId))} disabled={busy}>Pause</button>}{current.status === 'PAUSED' && <button className="primary-action" onClick={() => operate(() => workflowApi.resumeExecution(current.executionId))} disabled={busy}>Resume</button>}{['RUNNING', 'PAUSED'].includes(current.status) && <><button className="outline-button" onClick={() => setSignalOpen(true)} disabled={busy}>Send signal</button><button className="danger-button" onClick={() => operate(() => workflowApi.terminateExecution(current.executionId))} disabled={busy}>Terminate</button></>}{['COMPLETED', 'FAILED', 'TERMINATED', 'TIMED_OUT'].includes(current.status) && <button className="outline-button" onClick={() => operate(() => workflowApi.retryExecution(current.executionId))} disabled={busy}>Retry</button>}<button className="outline-button" onClick={onBack}><ChevronLeft size={15} /> Back</button></>
   const completed = current.events.filter((event) => event.status === 'COMPLETED').length
   const tabs: Array<typeof tab> = ['Tasks', 'Diagram', 'Timeline', 'Summary', 'Input/Output', 'JSON']
   const output = { status: current.status, completedTasks: completed, taskCount: current.events.length, executionId: current.executionId }
@@ -99,7 +100,16 @@ function ExecutionDetail({ record, onBack }: { record: ExecutionRecord; onBack: 
     {tab === 'Input/Output' && <div className="detail-grid"><div className="platform-card"><div className="platform-card-head"><div><strong>Workflow input</strong><span>Payload supplied at start</span></div><Code2 size={17} /></div><pre className="platform-code">{JSON.stringify(current.input, null, 2)}</pre></div><div className="platform-card"><div className="platform-card-head"><div><strong>Workflow output</strong><span>Current execution projection</span></div><Code2 size={17} /></div><pre className="platform-code">{JSON.stringify(output, null, 2)}</pre></div></div>}
     {tab === 'JSON' && <div className="platform-card"><div className="platform-card-head"><div><strong>Execution JSON</strong><span>Raw execution record and task statuses</span></div><Code2 size={17} /></div><pre className="platform-code execution-json">{JSON.stringify(current, null, 2)}</pre></div>}
     {selectedTask && <TaskExecutionModal executionId={current.executionId} event={selectedTask} onClose={() => setSelectedTask(null)} onUpdated={(next) => { setCurrent(next); setSelectedTask(next.events.find((item) => item.taskReferenceName === selectedTask.taskReferenceName) ?? null) }} />}
+    {signalOpen && <SignalModal onCancel={() => setSignalOpen(false)} onSend={(name, payload) => { setSignalOpen(false); operate(() => workflowApi.signalExecution(current.executionId, name, payload)) }} />}
   </PageFrame>
+}
+
+function SignalModal({ onCancel, onSend }: { onCancel: () => void; onSend: (name: string, payload: unknown) => void }) {
+  const [name, setName] = useState('external_signal')
+  const [payload, setPayload] = useState('{}')
+  const [error, setError] = useState('')
+  const send = () => { try { onSend(name, JSON.parse(payload)) } catch { setError('Signal payload must be valid JSON.') } }
+  return <div className="modal-backdrop"><section className="platform-modal signal-modal"><div className="modal-head"><div><span className="eyebrow">EXECUTION SIGNAL</span><h2>Send signal</h2><p>Resume a waiting execution with an external signal payload.</p></div><button onClick={onCancel}><X size={17} /></button></div><div className="modal-fields"><label>Signal name<input value={name} onChange={(event) => setName(event.target.value)} /></label><label>Payload (JSON)<textarea value={payload} onChange={(event) => setPayload(event.target.value)} spellCheck={false} /></label></div>{error && <div className="platform-error">{error}</div>}<div className="modal-actions"><button className="outline-button" onClick={onCancel}>Cancel</button><button className="primary-action" onClick={send}><Play size={14} /> Send signal</button></div></section></div>
 }
 
 function TaskExecutionModal({ executionId, event, onClose, onUpdated }: { executionId: string; event: ExecutionRecord['events'][number]; onClose: () => void; onUpdated: (record: ExecutionRecord) => void }) {
