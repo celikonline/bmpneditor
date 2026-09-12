@@ -413,6 +413,12 @@ test('creates and removes task definitions and schedules', async ({ page }) => {
   await expect(page.getByText('hourly_email', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Run schedule hourly_email', exact: true }).click()
   await expect(page.getByText('Schedule run started:', { exact: false })).toBeVisible()
+  await page.getByLabel('Schedule status filter').selectOption('ACTIVE')
+  await expect(page.getByText('hourly_email', { exact: true })).toBeVisible()
+  await page.getByLabel('Schedule status filter').selectOption('ALL')
+  page.once('dialog', (dialog) => dialog.accept('hourly_email_copy'))
+  await page.getByRole('button', { name: 'Clone schedule hourly_email', exact: true }).click()
+  await expect(page.getByText('Schedule cloned: hourly_email_copy', { exact: true })).toBeVisible()
 })
 
 test('replays an event into a workflow execution', async ({ page }) => {

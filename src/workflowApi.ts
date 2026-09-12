@@ -164,6 +164,17 @@ export const workflowApi = {
     return Promise.resolve()
   },
 
+  cloneSchedule(name: string, cloneName: string) {
+    return this.listSchedules().then((items) => {
+      const current = items.find((item) => item.name === name)
+      if (!current) throw new Error(`Schedule "${name}" was not found.`)
+      if (items.some((item) => item.name === cloneName)) throw new Error(`Schedule "${cloneName}" already exists.`)
+      const clone: ScheduleRecord = { ...structuredClone(current), name: cloneName, active: false, nextRun: 'Paused', updatedAt: new Date().toISOString() }
+      writeStored(scheduleStorageKey, [...items, clone])
+      return clone
+    })
+  },
+
   listQueues(): Promise<QueueRecord[]> {
     return Promise.resolve([
       { queue: 'http_request', taskType: 'HTTP', inProgress: 2, unprocessed: 14, rateLimit: 50, updatedAt: 'Now' },
