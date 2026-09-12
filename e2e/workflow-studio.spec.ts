@@ -435,6 +435,20 @@ test('replays an event into a workflow execution', async ({ page }) => {
   await expect(page.getByText('Event replay started:', { exact: false })).toBeVisible()
 })
 
+test('edits an event handler without losing its active state', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.clear()
+    window.localStorage.setItem('orkes-event-handlers-v1', JSON.stringify([{ name: 'incident_handler', event: 'incident.opened', action: 'START_WORKFLOW', workflowName: 'api_polling_workflow', active: true, updatedAt: 'Today' }]))
+  })
+  await page.goto('/eventHandlers')
+  await page.getByRole('button', { name: 'Edit event handler incident_handler', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Edit event handler', exact: true })).toBeVisible()
+  await page.getByLabel('Event name').fill('incident.resolved')
+  await page.getByRole('button', { name: 'Save handler', exact: true }).click()
+  await expect(page.getByText('incident.resolved', { exact: true })).toBeVisible()
+  await expect(page.getByText('ACTIVE', { exact: true })).toBeVisible()
+})
+
 test('sends a signal to an active execution', async ({ page }) => {
   await page.addInitScript(() => { if (!window.sessionStorage.getItem('signal-test-started')) { window.localStorage.clear(); window.sessionStorage.setItem('signal-test-started', '1') } })
   await page.goto('/')
