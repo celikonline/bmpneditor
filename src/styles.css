@@ -352,7 +352,7 @@ button:disabled { cursor: default; }
 .run-result strong { color: #3b7f5f; font-size: 12px; }
 .run-result span { overflow: hidden; color: #7c9183; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .run-history-hint { padding: 20px; color: #899aa8; font-size: 11px; line-height: 1.55; }
-.platform-error { margin-bottom: 15px; padding: 12px 15px; border: 1px solid #f2c1c8; border-radius: 6px; background: #fff1f3; color: #ad4c59; font-size: 11px; }
+.platform-error { margin-bottom: 15px; padding: 12px 15px; border: 1px solid #f2c1c8; border-radius: 6px; background: #fff1f3; color: #ad4c59; font-size: 11px; }.platform-success { margin-bottom: 15px; padding: 12px 15px; border: 1px solid #bfe5d1; border-radius: 6px; background: #effbf5; color: #2e8c62; font-size: 11px; }
 .danger-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 32px; padding: 0 11px; border: 1px solid #efc5cb; border-radius: 5px; background: #fff4f5; color: #bb5260; font-size: 11px; font-weight: 600; }
 .danger-button:hover { background: #ffe9ec; border-color: #e99da8; }
 .danger-button:disabled, .outline-button:disabled, .primary-action:disabled { opacity: .55; cursor: default; }

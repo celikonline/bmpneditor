@@ -274,6 +274,17 @@ test('creates and removes task definitions and schedules', async ({ page }) => {
   await page.getByLabel('Catch up missed runs').check()
   await page.getByRole('button', { name: 'Save schedule', exact: true }).click()
   await expect(page.getByText('hourly_email', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Run schedule hourly_email', exact: true }).click()
+  await expect(page.getByText('Schedule run started:', { exact: false })).toBeVisible()
+})
+
+test('replays an event into a workflow execution', async ({ page }) => {
+  await page.addInitScript(() => window.localStorage.clear())
+  await page.goto('/eventMonitor')
+  await page.getByRole('button', { name: /job\.completed/ }).click()
+  await expect(page.getByRole('heading', { name: 'job.completed', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Replay event', exact: true }).click()
+  await expect(page.getByText('Event replay started:', { exact: false })).toBeVisible()
 })
 
 test('runs a workflow from the platform Run Workflow screen', async ({ page }) => {

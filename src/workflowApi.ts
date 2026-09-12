@@ -86,6 +86,12 @@ export const workflowApi = {
     return this.listExecutions().then((records) => records.find((record) => record.executionId === executionId) ?? null)
   },
 
+  triggerWorkflow(workflowName: string, executionInput: unknown = {}, trigger = 'manual') {
+    const definition = readWorkflowDefinitions().find((item) => item.name === workflowName)
+    const tasks = definition?.nodes?.filter((node) => ['studio', 'loop', 'switch'].includes(node.type)) ?? [{ id: 'trigger-task', type: 'studio' as const, position: { x: 0, y: 0 }, data: { label: `${trigger}_task`, ref: `${trigger}_task_ref`, kind: 'SIMPLE' as const } }]
+    return workflowApi.startExecution({ workflowName, version: definition?.version ?? 1, idempotencyKey: `${trigger}-${workflowName}-${Date.now()}`, strategy: 'FAIL', tasks, executionInput, executionName: `${trigger} · ${workflowName}`, metadata: { trigger }, onEvent: () => undefined })
+  },
+
   listTaskDefinitions(): Promise<TaskDefinitionRecord[]> {
     return Promise.resolve(readStored<TaskDefinitionRecord>(taskDefinitionStorageKey, [
       { name: 'http_request', description: 'Invoke an external HTTP endpoint.', owner: 'platform', timeoutSeconds: 60, retryCount: 3, retryLogic: 'EXPONENTIAL_BACKOFF', retryDelaySeconds: 2, maxRetryDelaySeconds: 60, backoffJitterMs: 250, totalTimeoutSeconds: 300, responseTimeoutSeconds: 30, updatedAt: 'Today', status: 'ACTIVE' },
@@ -140,6 +146,15 @@ export const workflowApi = {
     return Promise.resolve(schedule)
   },
 
+  runSchedule(name: string) {
+    return workflowApi.listSchedules().then((items) => {
+      const schedule = items.find((item) => item.name === name)
+      if (!schedule) throw new Error(`Schedule "${name}" was not found.`)
+      if (!schedule.active) throw new Error(`Schedule "${name}" is paused.`)
+      return workflowApi.triggerWorkflow(schedule.workflowName, { _scheduledTime: new Date().toISOString(), _schedulerCron: schedule.cronExpression }, 'schedule')
+    })
+  },
+
   deleteSchedule(name: string) {
     const items = readStored<ScheduleRecord>(scheduleStorageKey, [])
     if (!items.some((item) => item.name === name)) return Promise.reject(new Error(`Schedule "${name}" was not found.`))
@@ -161,6 +176,11 @@ export const workflowApi = {
       { id: 'evt-1002', event: 'job.failed', status: 'FAILED', source: 'worker-api', receivedAt: '18 minutes ago', payload: { jobId: 'job-1002', status: 'FAILED' } },
       { id: 'evt-1001', event: 'payment.created', status: 'RECEIVED', source: 'payments', receivedAt: '34 minutes ago', payload: { paymentId: 'pay-1001' } },
     ])
+  },
+
+  replayEvent(event: EventRecord) {
+    const workflowName = event.event === 'job.completed' ? 'api_polling_workflow' : event.event === 'job.failed' ? 'endpoint_health_monitor' : 'payment_and_subscription_flow'
+    return workflowApi.triggerWorkflow(workflowName, { ...((event.payload && typeof event.payload === 'object') ? event.payload : {}), _eventId: event.id, _eventName: event.event }, 'event-replay')
   },
 
   save(settings: WorkflowSettings, nodes: StudioNode[], edges: Edge[] = []) {
