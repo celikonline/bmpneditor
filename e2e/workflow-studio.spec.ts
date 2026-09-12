@@ -299,6 +299,12 @@ test('runs a workflow from the platform Run Workflow screen', async ({ page }) =
   await page.getByRole('button', { name: 'Tasks', exact: true }).click()
   await page.getByRole('button', { name: 'run_workflow_task_ref' }).click()
   await expect(page.getByRole('heading', { name: 'run_workflow_task_ref', exact: true })).toBeVisible()
+  await page.getByLabel('Status').selectOption('FAILED')
+  await page.getByLabel('Reason for incompletion').fill('Worker returned a terminal error')
+  await page.getByRole('button', { name: 'Update task status', exact: true }).click()
+  await expect(page.locator('.task-execution-modal')).toContainText('Worker returned a terminal error')
+  await page.getByRole('button', { name: 'Close', exact: true }).click()
+  await expect(page.locator('.execution-task-row').filter({ hasText: 'run_workflow_task_ref' })).toContainText('FAILED')
 })
 
 test('persists saved workflows and exposes definition list actions', async ({ page }) => {
