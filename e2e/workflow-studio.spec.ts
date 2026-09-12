@@ -119,6 +119,14 @@ test('shows task-specific LLM and retrieval fields', async ({ page }) => {
   await expect(page.getByText('Vector database', { exact: true })).toBeVisible()
   await expect(page.getByText('Query', { exact: true })).toBeVisible()
   await expect(page.getByText('Max results', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: /Add another task/ }).click()
+  await page.getByRole('button', { name: /Generate Video/ }).first().click()
+  await expect(page.getByText('Input image (optional)', { exact: true })).toBeVisible()
+  await expect(page.getByText('Generate thumbnail', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: /Add another task/ }).click()
+  await page.getByRole('button', { name: /Call MCP Tool/ }).first().click()
+  await expect(page.getByText('MCP server URL', { exact: true })).toBeVisible()
+  await expect(page.getByText('Arguments (JSON or variable reference)', { exact: true })).toBeVisible()
 })
 
 test('undo and redo restore task nodes together with their connections', async ({ page }) => {

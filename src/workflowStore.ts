@@ -101,6 +101,53 @@ export type TaskConfig = {
   chunkOverlap?: number
   mediaSize?: string
   mediaDurationSeconds?: number
+  n?: number
+  width?: number
+  height?: number
+  size?: string
+  style?: string
+  outputFormat?: string
+  weight?: number
+  voice?: string
+  speed?: number
+  responseFormat?: string
+  inputImage?: string
+  aspectRatio?: string
+  resolution?: string
+  fps?: number
+  duration?: number
+  seed?: number
+  thumbnailTimestamp?: number
+  generateAudio?: boolean
+  generateThumbnail?: boolean
+  motion?: string
+  guidanceScale?: number
+  personGeneration?: string
+  maxDurationSeconds?: number
+  maxCostDollars?: number
+  negativePrompt?: string
+  markdown?: string
+  pageSize?: string
+  theme?: string
+  baseFontSize?: number
+  marginTop?: number
+  marginRight?: number
+  marginBottom?: number
+  marginLeft?: number
+  pdfMetadata?: string
+  outputLocation?: string
+  imageBaseUrl?: string
+  mcpServer?: string
+  arguments?: string
+  metadata?: string
+  agentName?: string
+  agentVersion?: string
+  modelOverride?: string
+  streaming?: boolean
+  pushNotification?: boolean
+  maxPollFailures?: number
+  historyLength?: number
+  contextId?: string
   subject?: string
   issuer?: string
   privateKey?: string
@@ -387,14 +434,22 @@ export function buildTaskInputParameters(kind: TaskKind, config?: TaskConfig): R
   if (kind === 'GET_DOCUMENT') set('url', source.url)
   if (kind === 'LIST_FILES') { set('inputLocation', source.inputLocation); set('fileTypes', source.fileTypes) }
   if (kind === 'PARSE_DOCUMENT') { set('integrationName', source.integrationName); set('url', source.url); set('mediaType', source.mediaType); set('chunkSize', source.chunkSize) }
-  if (kind === 'AGENT' || kind === 'GET_AGENT_CARD' || kind === 'CANCEL_AGENT') { set('agentType', source.agentType); set('agentUrl', source.agentUrl); set('taskId', source.taskId); set('text', source.text); set('pollIntervalSeconds', source.pollIntervalSeconds) }
+  if (kind === 'AGENT' || kind === 'GET_AGENT_CARD' || kind === 'CANCEL_AGENT') { ;(['agentType', 'agentName', 'agentVersion', 'agentUrl', 'taskId', 'text', 'modelOverride', 'streaming', 'pushNotification', 'pollIntervalSeconds', 'maxDurationSeconds', 'maxPollFailures', 'historyLength', 'contextId'] as const).forEach((key) => set(key, source[key])) }
   if (kind === 'SENDGRID') { set('from', source.from); set('to', source.to); set('subject', source.subjectLine); set('contentType', source.contentType); set('content', source.content); set('sendgridConfiguration', source.sendgridConfiguration) }
   if (kind === 'CHUNK_TEXT') { set('text', source.text); set('chunkSize', source.chunkSize); set('mediaType', source.mediaType) }
   if (kind === 'INTEGRATION' || kind === 'MCP_REMOTE') { set('integrationName', source.integrationName); set('operation', source.operation) }
+  if (kind === 'LIST_MCP_TOOLS' || kind === 'CALL_MCP_TOOL') { set('mcpServer', source.mcpServer); set('method', source.operation); set('headers', parseConfigValue(source.headers)); set('arguments', parseConfigValue(source.arguments)) }
+  if (kind === 'GENERATE_IMAGE' || kind === 'AI_GENERATE_IMAGE' || kind === 'GENERATE_AUDIO' || kind === 'GENERATE_VIDEO' || kind === 'GENERATE_PDF') {
+    ;(['llmProvider', 'model', 'prompt', 'text', 'voice', 'responseFormat', 'inputImage', 'aspectRatio', 'resolution', 'size', 'style', 'outputFormat', 'personGeneration', 'motion', 'negativePrompt', 'markdown', 'pageSize', 'theme', 'outputLocation', 'imageBaseUrl'] as const).forEach((key) => set(key, source[key]))
+    set('pdfMetadata', parseConfigValue(source.pdfMetadata))
+    ;(['n', 'width', 'height', 'weight', 'speed', 'fps', 'duration', 'seed', 'thumbnailTimestamp', 'guidanceScale', 'maxDurationSeconds', 'maxCostDollars', 'baseFontSize', 'marginTop', 'marginRight', 'marginBottom', 'marginLeft'] as const).forEach((key) => set(key, source[key]))
+    ;(['generateAudio', 'generateThumbnail'] as const).forEach((key) => set(key, source[key]))
+  }
   if (kind.startsWith('LLM_')) {
     ;(['llmProvider', 'model', 'promptName', 'instructions', 'text', 'vectorDB', 'index', 'namespace', 'embeddingModelProvider', 'embeddingModel', 'docId', 'query', 'mediaType'] as const).forEach((key) => set(key, source[key]))
     ;(['messages', 'promptVariables', 'stopWords', 'jsonOutput', 'embeddings'] as const).forEach((key) => set(key, parseConfigValue(source[key])))
     ;(['temperature', 'topP', 'maxTokens', 'dimensions', 'maxResults', 'chunkSize', 'chunkOverlap'] as const).forEach((key) => set(key, source[key]))
+    if (kind === 'LLM_STORE_EMBEDDINGS') set('metadata', parseConfigValue(source.metadata))
   }
   return params
 }
