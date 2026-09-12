@@ -239,6 +239,23 @@ test('uses advanced execution date filters', async ({ page }) => {
   await expect(page.getByLabel('Started before')).toHaveValue('')
 })
 
+test('filters executions by workflow and correlation fields', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.clear()
+    window.localStorage.setItem('orkes-executions-v1', JSON.stringify([
+      { executionId: 'exec_filter_1', workflowName: 'api_polling_workflow', version: 1, status: 'COMPLETED', input: {}, events: [], startedAt: '2026-01-01T10:00:00.000Z', executionName: 'nightly-poll', correlationId: 'incident-123', tasks: [] },
+      { executionId: 'exec_filter_2', workflowName: 'endpoint_health_monitor', version: 1, status: 'FAILED', input: {}, events: [], startedAt: '2026-01-01T11:00:00.000Z', executionName: 'health-check', correlationId: 'incident-456', tasks: [] },
+    ]))
+  })
+  await page.goto('/executions')
+  await page.getByRole('button', { name: 'Advanced filters', exact: true }).click()
+  await page.getByLabel('Workflow name filter').fill('api_polling')
+  await page.getByLabel('Correlation ID filter').fill('incident-123')
+  await expect(page.getByText('1 result', { exact: true })).toBeVisible()
+  await expect(page.getByText('exec_filter_1', { exact: true })).toBeVisible()
+  await expect(page.getByText('exec_filter_2', { exact: true })).not.toBeVisible()
+})
+
 test('selects executions and exposes bulk controls', async ({ page }) => {
   await page.addInitScript(() => {
     window.localStorage.clear()
