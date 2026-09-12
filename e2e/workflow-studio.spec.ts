@@ -148,3 +148,30 @@ test('supports the workflow builder entry options from the definitions list', as
   await expect(page.getByText('new_workflow', { exact: true })).toBeVisible()
   await expect(page.locator('.canvas-ribbon')).toContainText('0 tasks')
 })
+
+test('persists saved workflows and exposes definition list actions', async ({ page }) => {
+  await page.addInitScript(() => window.localStorage.clear())
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
+  await page.goto('/workflows')
+  await expect(page.getByText('api_polling_workflow', { exact: true })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Actions for api_polling_workflow', exact: true }).click()
+  page.once('dialog', (dialog) => dialog.accept('api_polling_copy'))
+  await page.getByRole('button', { name: 'Duplicate', exact: true }).click()
+  await expect(page.getByText('api_polling_copy', { exact: true })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Actions for api_polling_copy', exact: true }).click()
+  await page.getByRole('button', { name: 'Archive', exact: true }).click()
+  await expect(page.locator('.workflow-row').filter({ hasText: 'api_polling_copy' })).toContainText('ARCHIVED')
+})
+
+test('deletes a saved workflow from the builder header', async ({ page }) => {
+  await page.addInitScript(() => window.localStorage.clear())
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
+  page.once('dialog', (dialog) => dialog.accept())
+  await page.getByRole('button', { name: 'Delete', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Workflow Definitions' })).toBeVisible()
+  await expect(page.getByText('api_polling_workflow', { exact: true })).not.toBeVisible()
+})

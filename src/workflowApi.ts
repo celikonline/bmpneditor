@@ -7,9 +7,30 @@ export type ExecutionTaskEvent = { taskReferenceName: string; status: TaskExecut
 export type ExecutionStatus = 'RUNNING' | 'PAUSED' | 'COMPLETED' | 'TIMED_OUT' | 'TERMINATED' | 'FAILED'
 export type RealtimeExecutionEvent = { type: 'workflow.started' | 'workflow.completed' | 'workflow.failed' | 'task.scheduled' | 'task.started' | 'task.completed' | 'task.retrying'; executionId: string; taskReferenceName?: string; at: string; status?: ExecutionStatus }
 export type ExecutionRecord = { executionId: string; workflowName: string; version: number; status: ExecutionStatus; input: unknown; events: ExecutionTaskEvent[]; startedAt: string; completedAt?: string; correlationId?: string; priority?: number; executionName?: string; metadata?: Record<string, string>; idempotencyKey?: string }
+export type WorkflowDefinitionRecord = { name: string; description: string; version: number; status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED'; updatedAt: string; taskCount: number; workflow?: WorkflowSettings; nodes?: StudioNode[]; edges?: Edge[] }
 
 const executionByKey = new Map<string, ExecutionRecord>()
 const executionControllers = new Map<string, { record: ExecutionRecord; paused: boolean; terminated: boolean; onEvent: (event: ExecutionTaskEvent) => void; onRealtimeEvent?: (event: RealtimeExecutionEvent) => void }>()
+const workflowStorageKey = 'orkes-workflow-definitions-v1'
+const seedWorkflowDefinitions: WorkflowDefinitionRecord[] = [
+  { name: 'api_polling_workflow', description: 'Poll a remote API until a condition is met.', version: 1, status: 'PUBLISHED', updatedAt: 'Just now', taskCount: 10 },
+  { name: 'endpoint_health_monitor', description: 'Monitor an HTTP endpoint and route health outcomes.', version: 3, status: 'PUBLISHED', updatedAt: '3 hours ago', taskCount: 7 },
+  { name: 'payment_and_subscription_flow', description: 'Process payment outcomes across multiple providers.', version: 12, status: 'DRAFT', updatedAt: 'Yesterday', taskCount: 18 },
+]
+
+function readWorkflowDefinitions(): WorkflowDefinitionRecord[] {
+  if (typeof window === 'undefined') return seedWorkflowDefinitions
+  try {
+    const stored = window.localStorage.getItem(workflowStorageKey)
+    if (!stored) return seedWorkflowDefinitions
+    const parsed = JSON.parse(stored) as unknown
+    return Array.isArray(parsed) ? parsed as WorkflowDefinitionRecord[] : seedWorkflowDefinitions
+  } catch { return seedWorkflowDefinitions }
+}
+
+function writeWorkflowDefinitions(definitions: WorkflowDefinitionRecord[]) {
+  if (typeof window !== 'undefined') window.localStorage.setItem(workflowStorageKey, JSON.stringify(definitions))
+}
 
 export const workflowApi = {
   getTaskCatalog(): Promise<TaskCatalogItem[]> {
@@ -20,10 +41,50 @@ export const workflowApi = {
     return validateWorkflow(nodes, edges)
   },
 
+  listWorkflowDefinitions(): Promise<WorkflowDefinitionRecord[]> {
+    return Promise.resolve(readWorkflowDefinitions().sort((left, right) => left.name.localeCompare(right.name)))
+  },
+
+  getWorkflowDefinition(name: string): Promise<WorkflowDefinitionRecord | null> {
+    return Promise.resolve(readWorkflowDefinitions().find((item) => item.name === name) ?? null)
+  },
+
   save(settings: WorkflowSettings, nodes: StudioNode[], edges: Edge[] = []) {
     const errors = validateWorkflow(nodes, edges).filter((issue) => issue.severity === 'error')
     if (errors.length) return Promise.reject(new Error(`Save blocked: ${errors[0].message}`))
-    return Promise.resolve({ version: settings.version, savedAt: new Date().toISOString(), taskCount: nodes.filter((node) => node.type === 'studio' || node.type === 'switch' || node.type === 'loop').length })
+    const savedAt = new Date().toISOString()
+    const taskCount = nodes.filter((node) => node.type === 'studio' || node.type === 'switch' || node.type === 'loop').length
+    const definitions = readWorkflowDefinitions()
+    const existing = definitions.find((item) => item.name === settings.name)
+    const record: WorkflowDefinitionRecord = { name: settings.name, description: settings.description, version: settings.version, status: existing?.status === 'PUBLISHED' ? 'PUBLISHED' : 'DRAFT', updatedAt: savedAt, taskCount, workflow: structuredClone(settings), nodes: structuredClone(nodes), edges: structuredClone(edges) }
+    writeWorkflowDefinitions([...definitions.filter((item) => item.name !== settings.name), record])
+    return Promise.resolve({ version: settings.version, savedAt, taskCount })
+  },
+
+  deleteWorkflowDefinition(name: string) {
+    const definitions = readWorkflowDefinitions()
+    if (!definitions.some((item) => item.name === name)) return Promise.reject(new Error(`Workflow "${name}" was not found.`))
+    writeWorkflowDefinitions(definitions.filter((item) => item.name !== name))
+    return Promise.resolve()
+  },
+
+  archiveWorkflowDefinition(name: string) {
+    const definitions = readWorkflowDefinitions()
+    const current = definitions.find((item) => item.name === name)
+    if (!current) return Promise.reject(new Error(`Workflow "${name}" was not found.`))
+    const archived = { ...current, status: 'ARCHIVED' as const, updatedAt: new Date().toISOString() }
+    writeWorkflowDefinitions(definitions.map((item) => item.name === name ? archived : item))
+    return Promise.resolve(archived)
+  },
+
+  cloneWorkflowDefinition(name: string, cloneName: string) {
+    const definitions = readWorkflowDefinitions()
+    const current = definitions.find((item) => item.name === name)
+    if (!current) return Promise.reject(new Error(`Workflow "${name}" was not found.`))
+    if (definitions.some((item) => item.name === cloneName)) return Promise.reject(new Error(`Workflow "${cloneName}" already exists.`))
+    const clone: WorkflowDefinitionRecord = { ...structuredClone(current), name: cloneName, version: 1, status: 'DRAFT', updatedAt: new Date().toISOString(), workflow: current.workflow ? { ...structuredClone(current.workflow), name: cloneName, version: 1 } : undefined }
+    writeWorkflowDefinitions([...definitions, clone])
+    return Promise.resolve(clone)
   },
 
   testTask(node: StudioNode) {
