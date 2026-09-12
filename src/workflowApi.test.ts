@@ -34,11 +34,13 @@ describe('workflow API idempotency', () => {
       expect(record.correlationId).toBe('incident-7')
       expect(record.priority).toBe(5)
       expect(record.executionName).toBe('health-check')
+      expect(record.traceId).toBe(`trace_${record.executionId}`)
       expect(realtime[0]).toBe('workflow.started')
       await vi.runAllTimersAsync()
       expect(record.status).toBe('COMPLETED')
       expect(realtime).toEqual(['workflow.started', 'task.scheduled', 'task.started', 'task.completed', 'workflow.completed'])
       expect(record.completedAt).toBeTruthy()
+      expect(record.events.every((event) => event.taskExecutionId?.startsWith(`task_${record.executionId}_`))).toBe(true)
     } finally {
       vi.useRealTimers()
     }

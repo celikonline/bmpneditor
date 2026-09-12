@@ -3,11 +3,11 @@ import { validateWorkflow, validateWorkflowSettings, type StudioNode, type Workf
 import { taskCatalog, type TaskCatalogItem } from './taskCatalog'
 
 export type TaskExecutionStatus = 'SCHEDULED' | 'IN_PROGRESS' | 'SKIPPED' | 'TIMED_OUT' | 'CANCELED' | 'FAILED' | 'FAILED_WITH_TERMINAL_ERROR' | 'COMPLETED_WITH_ERRORS' | 'COMPLETED'
-export type ExecutionTaskEvent = { taskReferenceName: string; status: TaskExecutionStatus; at: string; reasonForIncompletion?: string; retryCount?: number; workerId?: string }
+export type ExecutionTaskEvent = { taskReferenceName: string; status: TaskExecutionStatus; at: string; reasonForIncompletion?: string; retryCount?: number; workerId?: string; taskExecutionId?: string }
 export type ExecutionStatus = 'RUNNING' | 'PAUSED' | 'COMPLETED' | 'TIMED_OUT' | 'TERMINATED' | 'FAILED'
 export type RealtimeExecutionEvent = { type: 'workflow.started' | 'workflow.completed' | 'workflow.failed' | 'task.scheduled' | 'task.started' | 'task.completed' | 'task.retrying'; executionId: string; taskReferenceName?: string; at: string; status?: ExecutionStatus }
 export type ExecutionSignal = { name: string; payload: unknown; at: string }
-export type ExecutionRecord = { executionId: string; workflowName: string; version: number; status: ExecutionStatus; input: unknown; events: ExecutionTaskEvent[]; startedAt: string; completedAt?: string; correlationId?: string; priority?: number; executionName?: string; metadata?: Record<string, string>; idempotencyKey?: string; tasks?: StudioNode[]; signals?: ExecutionSignal[] }
+export type ExecutionRecord = { executionId: string; workflowName: string; version: number; status: ExecutionStatus; input: unknown; events: ExecutionTaskEvent[]; startedAt: string; completedAt?: string; correlationId?: string; priority?: number; executionName?: string; metadata?: Record<string, string>; idempotencyKey?: string; tasks?: StudioNode[]; signals?: ExecutionSignal[]; traceId?: string }
 export type WorkflowDefinitionRecord = { name: string; description: string; version: number; status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED'; updatedAt: string; taskCount: number; workflow?: WorkflowSettings; nodes?: StudioNode[]; edges?: Edge[] }
 export type TaskDefinitionRecord = { name: string; description: string; owner: string; timeoutSeconds: number; retryCount: number; retryLogic?: 'FIXED' | 'EXPONENTIAL_BACKOFF' | 'LINEAR_BACKOFF'; retryDelaySeconds?: number; maxRetryDelaySeconds?: number; backoffJitterMs?: number; totalTimeoutSeconds?: number; responseTimeoutSeconds?: number; pollTimeoutSeconds?: number; updatedAt: string; status: 'ACTIVE' | 'PAUSED' }
 export type EventHandlerRecord = { name: string; event: string; action: string; workflowName: string; active: boolean; updatedAt: string }
@@ -245,14 +245,15 @@ export const workflowApi = {
     if (existing && input.strategy === 'FAIL') return Promise.reject(new Error('An execution already exists for this idempotency key.'))
     if (existing && input.strategy === 'FAIL_ON_RUNNING' && existing.status === 'RUNNING') return Promise.reject(new Error('An execution is already running for this idempotency key.'))
     const startedAt = new Date().toISOString()
-    const record: ExecutionRecord = { executionId: `exec_${Date.now()}`, workflowName: input.workflowName, version: input.version, status: 'RUNNING', input: input.executionInput ?? {}, events: [], startedAt, correlationId: input.correlationId, priority: input.priority, executionName: input.executionName, metadata: input.metadata, idempotencyKey: input.idempotencyKey, tasks: structuredClone(input.tasks) }
+    const executionId = `exec_${Date.now()}`
+    const record: ExecutionRecord = { executionId, workflowName: input.workflowName, version: input.version, status: 'RUNNING', input: input.executionInput ?? {}, events: [], startedAt, correlationId: input.correlationId, priority: input.priority, executionName: input.executionName, metadata: input.metadata, idempotencyKey: input.idempotencyKey, tasks: structuredClone(input.tasks), traceId: `trace_${executionId}` }
     executionByKey.set(input.idempotencyKey, record)
     persistExecution(record)
     const controller = { record, paused: false, terminated: false, onEvent: input.onEvent, onRealtimeEvent: input.onRealtimeEvent }
     executionControllers.set(record.executionId, controller)
     input.onRealtimeEvent?.({ type: 'workflow.started', executionId: record.executionId, at: startedAt, status: record.status })
     input.tasks.forEach((task, index) => {
-      const event: ExecutionTaskEvent = { taskReferenceName: task.data.ref, status: 'SCHEDULED', at: new Date().toISOString() }
+      const event: ExecutionTaskEvent = { taskReferenceName: task.data.ref, status: 'SCHEDULED', at: new Date().toISOString(), taskExecutionId: `task_${record.executionId}_${index + 1}` }
       record.events.push(event)
       input.onEvent(event)
       input.onRealtimeEvent?.({ type: 'task.scheduled', executionId: record.executionId, taskReferenceName: task.data.ref, at: event.at })
