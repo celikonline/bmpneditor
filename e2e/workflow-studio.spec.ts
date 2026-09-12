@@ -297,6 +297,15 @@ test('creates and filters reusable integrations', async ({ page }) => {
   await expect(page.getByText('crm_api', { exact: true })).not.toBeVisible()
 })
 
+test('runs an agent with a prompt from the agent registry', async ({ page }) => {
+  await page.addInitScript(() => window.localStorage.clear())
+  await page.goto('/agents')
+  await page.getByRole('button', { name: 'Run agent news_research_agent', exact: true }).click()
+  await page.getByLabel('Agent prompt').fill('Summarize the latest workflow failures.')
+  await page.getByRole('button', { name: 'Run agent', exact: true }).click()
+  await expect(page.getByText('Agent execution started:', { exact: false })).toBeVisible()
+})
+
 test('creates and removes task definitions and schedules', async ({ page }) => {
   await page.addInitScript(() => window.localStorage.clear())
   await page.goto('/taskDefs')
