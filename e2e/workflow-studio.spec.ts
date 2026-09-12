@@ -303,6 +303,18 @@ test('sends a signal to an active execution', async ({ page }) => {
   await expect(page.locator('.execution-json')).toContainText('job.completed')
 })
 
+test('persists platform registry resources and supports lifecycle actions', async ({ page }) => {
+  await page.addInitScript(() => { if (!window.sessionStorage.getItem('registry-test-started')) { window.localStorage.clear(); window.sessionStorage.setItem('registry-test-started', '1') } })
+  await page.goto('/agents')
+  await page.getByRole('button', { name: 'New agent', exact: true }).click()
+  await expect(page.getByText('new_agents_2', { exact: true })).toBeVisible()
+  await page.reload()
+  await expect(page.getByText('new_agents_2', { exact: true })).toBeVisible()
+  page.once('dialog', (dialog) => dialog.accept())
+  await page.getByRole('button', { name: 'Delete agent new_agents_2', exact: true }).click()
+  await expect(page.getByText('new_agents_2', { exact: true })).not.toBeVisible()
+})
+
 test('runs a workflow from the platform Run Workflow screen', async ({ page }) => {
   await page.addInitScript(() => window.localStorage.clear())
   await page.goto('/runWorkflow')

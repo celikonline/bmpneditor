@@ -230,13 +230,23 @@ const resourceConfig: Partial<Record<ResourceView, ResourceConfig>> = {
 
 function ResourceRegistryPage({ view }: { view: ResourceView }) {
   const config = resourceConfig[view]
-  const [items, setItems] = useState(config?.seeds ?? [])
+  const storageKey = `orkes-resource-registry-${view}`
+  const [items, setItems] = useState(() => {
+    if (!config || typeof window === 'undefined') return config?.seeds ?? []
+    try {
+      const stored = JSON.parse(window.localStorage.getItem(storageKey) ?? 'null') as unknown
+      return Array.isArray(stored) ? stored as typeof config.seeds : config.seeds
+    } catch { return config.seeds }
+  })
   const [query, setQuery] = useState('')
   if (!config) return null
+  useEffect(() => { window.localStorage.setItem(storageKey, JSON.stringify(items)) }, [items, storageKey])
   const visible = items.filter((item) => `${item.name} ${item.detail} ${item.owner} ${item.status}`.toLowerCase().includes(query.toLowerCase()))
   const add = () => setItems((current) => [...current, { name: `new_${view.replaceAll('-', '_')}_${current.length + 1}`, detail: `New ${config.noun} ready for configuration`, owner: 'platform', status: 'PAUSED' }])
+  const toggle = (name: string) => setItems((current) => current.map((item) => item.name === name ? { ...item, status: item.status === 'ACTIVE' ? 'PAUSED' : 'ACTIVE' } : item))
+  const remove = (name: string) => { if (window.confirm(`Delete ${config.noun} "${name}"?`)) setItems((current) => current.filter((item) => item.name !== name)) }
   const Icon = config.icon
-  return <PageFrame eyebrow={config.eyebrow} title={config.title} description={config.description} actions={<button className="primary-action" onClick={add}><Plus size={15} /> New {config.noun}</button>}><Toolbar><SearchBox value={query} onChange={setQuery} placeholder={`Search ${config.title.toLowerCase()}...`} /><span className="toolbar-count">{visible.length} items</span></Toolbar><div className="platform-card"><div className="platform-table"><div className="platform-table-head"><span>Name</span><span>Details</span><span>Owner</span><span>Status</span><span>Updated</span><span /></div>{visible.length === 0 ? <EmptyState icon={Icon} title={`No ${config.title.toLowerCase()} found`} detail="Create a resource or adjust your search." /> : visible.map((item) => <div className="platform-table-row static" key={item.name}><span><strong>{item.name}</strong><small>{item.detail}</small></span><span>{item.detail}</span><span>{item.owner}</span><span><StatusPill value={item.status} /></span><span>Just now</span><span /></div>)}</div></div></PageFrame>
+  return <PageFrame eyebrow={config.eyebrow} title={config.title} description={config.description} actions={<button className="primary-action" onClick={add}><Plus size={15} /> New {config.noun}</button>}><Toolbar><SearchBox value={query} onChange={setQuery} placeholder={`Search ${config.title.toLowerCase()}...`} /><span className="toolbar-count">{visible.length} items</span></Toolbar><div className="platform-card"><div className="platform-table"><div className="platform-table-head"><span>Name</span><span>Details</span><span>Owner</span><span>Status</span><span>Updated</span><span>Actions</span></div>{visible.length === 0 ? <EmptyState icon={Icon} title={`No ${config.title.toLowerCase()} found`} detail="Create a resource or adjust your search." /> : visible.map((item) => <div className="platform-table-row static" key={item.name}><span><strong>{item.name}</strong><small>{item.detail}</small></span><span>{item.detail}</span><span>{item.owner}</span><button className="inline-status-button" onClick={() => toggle(item.name)}><StatusPill value={item.status} /></button><span>Just now</span><span className="row-inline-actions"><button className="icon-button" aria-label={`Delete ${config.noun} ${item.name}`} onClick={() => remove(item.name)}><Trash2 size={14} /></button></span></div>)}</div></div></PageFrame>
 }
 
 function PlatformPlaceholder({ view, onNavigate }: { view: PlatformView; onNavigate: Navigation }) {
