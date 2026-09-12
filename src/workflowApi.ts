@@ -339,6 +339,16 @@ export const workflowApi = {
     })
   },
 
+  restartExecution(executionId: string, useLatestDefinitions = false) {
+    return this.getExecution(executionId).then((record) => {
+      if (!record) throw new Error('Execution was not found.')
+      if (!record.tasks?.length) throw new Error('This execution has no restartable task definition.')
+      const latest = readWorkflowDefinitions().find((item) => item.name === record.workflowName)
+      const tasks = useLatestDefinitions ? latest?.nodes?.filter((node) => ['studio', 'loop', 'switch'].includes(node.type)) ?? record.tasks : record.tasks
+      return this.startExecution({ workflowName: record.workflowName, version: useLatestDefinitions ? latest?.version ?? record.version : record.version, idempotencyKey: `restart-${record.executionId}-${useLatestDefinitions ? 'latest' : 'current'}-${Date.now()}`, strategy: 'FAIL', tasks, executionInput: record.input, correlationId: record.correlationId, priority: record.priority, executionName: record.executionName ? `${record.executionName} (restart)` : undefined, metadata: record.metadata, onEvent: () => undefined })
+    })
+  },
+
   updateTaskStatus(executionId: string, taskReferenceName: string, status: TaskExecutionStatus, reasonForIncompletion?: string) {
     return this.getExecution(executionId).then((record) => {
       if (!record) throw new Error('Execution was not found.')

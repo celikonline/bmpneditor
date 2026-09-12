@@ -272,6 +272,17 @@ test('runs supported execution filters in SQL mode', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'exec_sql_2 exec_sql_2' })).not.toBeVisible()
 })
 
+test('exposes restart variants for completed executions', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.clear()
+    window.localStorage.setItem('orkes-executions-v1', JSON.stringify([{ executionId: 'exec_restart_1', workflowName: 'api_polling_workflow', version: 1, status: 'COMPLETED', input: {}, events: [], startedAt: '2026-01-01T10:00:00.000Z', completedAt: '2026-01-01T10:00:01.000Z', tasks: [{ id: 'task', type: 'studio', position: { x: 0, y: 0 }, data: { label: 'task', ref: 'task_ref', kind: 'HTTP' } }] }]))
+  })
+  await page.goto('/executions')
+  await page.getByRole('button', { name: /exec_restart_1/ }).click()
+  await expect(page.getByRole('button', { name: 'Restart current', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Restart latest', exact: true })).toBeVisible()
+})
+
 test('selects executions and exposes bulk controls', async ({ page }) => {
   await page.addInitScript(() => {
     window.localStorage.clear()
