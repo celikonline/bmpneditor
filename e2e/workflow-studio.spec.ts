@@ -263,6 +263,22 @@ test('inspects polling workers from the queue monitor', async ({ page }) => {
   await expect(page.getByLabel('Auto refresh')).toHaveValue('5')
 })
 
+test('creates and filters reusable integrations', async ({ page }) => {
+  await page.addInitScript(() => window.localStorage.clear())
+  await page.goto('/integrations')
+  await page.getByRole('button', { name: 'New connection', exact: true }).click()
+  await page.getByLabel('Connection name').fill('crm_api')
+  await page.getByLabel('Connection category').selectOption('HTTP')
+  await page.getByLabel('Connection endpoint').fill('https://crm.example.local')
+  await page.getByRole('button', { name: 'Save connection', exact: true }).click()
+  await expect(page.getByText('crm_api', { exact: true })).toBeVisible()
+  await page.getByLabel('Integration category').selectOption('HTTP')
+  await expect(page.getByText('crm_api', { exact: true })).toBeVisible()
+  page.once('dialog', (dialog) => dialog.accept())
+  await page.getByRole('button', { name: 'Delete integration crm_api', exact: true }).click()
+  await expect(page.getByText('crm_api', { exact: true })).not.toBeVisible()
+})
+
 test('creates and removes task definitions and schedules', async ({ page }) => {
   await page.addInitScript(() => window.localStorage.clear())
   await page.goto('/taskDefs')

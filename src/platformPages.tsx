@@ -16,6 +16,7 @@ export function PlatformPage({ view, onNavigate }: { view: PlatformView; onNavig
   if (view === 'schedulers') return <SchedulersPage />
   if (view === 'schemas') return <SchemasPage />
   if (view === 'api') return <ApiReferencePage />
+  if (view === 'integrations') return <IntegrationsPage />
   if (view in resourceConfig) return <ResourceRegistryPage view={view as ResourceView} />
   return <PlatformPlaceholder view={view} onNavigate={onNavigate} />
 }
@@ -263,6 +264,44 @@ function ApiReferencePage() {
   const [query, setQuery] = useState('')
   const visible = endpoints.filter((endpoint) => `${endpoint.group} ${endpoint.method} ${endpoint.path} ${endpoint.desc}`.toLowerCase().includes(query.toLowerCase()))
   return <PageFrame eyebrow="API DOCS" title="API Reference" description="Explore the Conductor-compatible APIs exposed by this workspace." actions={<button className="outline-button" onClick={() => navigator.clipboard?.writeText('http://localhost:8080/api')}><Copy size={15} /> Copy base URL</button>}><Toolbar><SearchBox value={query} onChange={setQuery} placeholder="Search API operations..." /></Toolbar><div className="api-reference-list">{visible.map((endpoint) => <div className="api-operation" key={`${endpoint.method}-${endpoint.path}`}><div className={`api-method ${endpoint.method.toLowerCase()}`}>{endpoint.method}</div><div><strong>{endpoint.path}</strong><span>{endpoint.group} · {endpoint.desc}</span></div><button className="icon-button" aria-label={`Copy ${endpoint.path}`} onClick={() => navigator.clipboard?.writeText(endpoint.path)}><Copy size={15} /></button><ChevronLeft className="rotate-180" size={15} /></div>)}</div></PageFrame>
+}
+
+type IntegrationRecord = { name: string; type: string; category: 'HTTP' | 'EVENT' | 'AI MODEL' | 'DATABASE'; endpoint: string; owner: string; status: 'ACTIVE' | 'PAUSED' }
+const integrationStorageKey = 'orkes-integrations-v1'
+const defaultIntegrations: IntegrationRecord[] = [
+  { name: 'payments_api', type: 'HTTP', category: 'HTTP', endpoint: 'https://payments.example.local', owner: 'platform', status: 'ACTIVE' },
+  { name: 'workflow_events', type: 'Kafka', category: 'EVENT', endpoint: 'orders.events', owner: 'platform', status: 'ACTIVE' },
+]
+
+function IntegrationsPage() {
+  const [items, setItems] = useState<IntegrationRecord[]>(() => {
+    if (typeof window === 'undefined') return defaultIntegrations
+    try {
+      const stored = JSON.parse(window.localStorage.getItem(integrationStorageKey) ?? 'null') as unknown
+      return Array.isArray(stored) ? stored as IntegrationRecord[] : defaultIntegrations
+    } catch { return defaultIntegrations }
+  })
+  const [query, setQuery] = useState('')
+  const [category, setCategory] = useState('ALL')
+  const [formOpen, setFormOpen] = useState(false)
+  const [draft, setDraft] = useState({ name: '', type: 'HTTP', category: 'HTTP' as IntegrationRecord['category'], endpoint: '', owner: 'platform' })
+  useEffect(() => { window.localStorage.setItem(integrationStorageKey, JSON.stringify(items)) }, [items])
+  const visible = useMemo(() => items.filter((item) => `${item.name} ${item.type} ${item.category} ${item.endpoint} ${item.owner}`.toLowerCase().includes(query.toLowerCase()) && (category === 'ALL' || item.category === category)), [category, items, query])
+  const save = () => {
+    if (!draft.name.trim() || !draft.endpoint.trim()) return
+    const record: IntegrationRecord = { ...draft, name: draft.name.trim(), endpoint: draft.endpoint.trim(), status: 'ACTIVE' }
+    setItems((current) => [...current.filter((item) => item.name !== record.name), record])
+    setDraft({ name: '', type: 'HTTP', category: 'HTTP', endpoint: '', owner: 'platform' })
+    setFormOpen(false)
+  }
+  const toggle = (name: string) => setItems((current) => current.map((item) => item.name === name ? { ...item, status: item.status === 'ACTIVE' ? 'PAUSED' : 'ACTIVE' } : item))
+  const remove = (name: string) => { if (window.confirm(`Delete integration "${name}"?`)) setItems((current) => current.filter((item) => item.name !== name)) }
+  return <PageFrame eyebrow="INTEGRATIONS" title="Connections and Resources" description="Register the external systems used by HTTP, event, AI and database tasks." actions={<button className="primary-action" onClick={() => setFormOpen(true)}><Plus size={15} /> New connection</button>}>
+    <div className="metric-cards"><MetricCard icon={Globe2} label="Connected resources" value={items.length} tone="blue" /><MetricCard icon={Activity} label="Active connections" value={items.filter((item) => item.status === 'ACTIVE').length} tone="green" /><MetricCard icon={Settings2} label="Categories" value={new Set(items.map((item) => item.category)).size} tone="amber" /></div>
+    <Toolbar><SearchBox value={query} onChange={setQuery} placeholder="Search connections and resources..." /><label className="platform-select"><Filter size={15} /><select aria-label="Integration category" value={category} onChange={(event) => setCategory(event.target.value)}><option value="ALL">All categories</option><option value="HTTP">HTTP</option><option value="EVENT">Event</option><option value="AI MODEL">AI model</option><option value="DATABASE">Database</option></select></label><span className="toolbar-count">{visible.length} connections</span></Toolbar>
+    <div className="platform-card"><div className="platform-card-head"><div><strong>Configured connections</strong><span>These resources can be selected from task-specific connection fields.</span></div><Server size={17} /></div><div className="platform-table"><div className="platform-table-head"><span>Connection</span><span>Type</span><span>Endpoint</span><span>Owner</span><span>Status</span><span>Actions</span></div>{visible.length === 0 ? <EmptyState icon={Globe2} title="No connections found" detail="Create a connection or adjust your search." /> : visible.map((item) => <div className="platform-table-row static" key={item.name}><span><strong>{item.name}</strong><small>{item.category} resource</small></span><span>{item.type}</span><span>{item.endpoint}</span><span>{item.owner}</span><button className="inline-status-button" onClick={() => toggle(item.name)}><StatusPill value={item.status} /></button><span className="row-inline-actions"><button className="icon-button" aria-label={`Delete integration ${item.name}`} onClick={() => remove(item.name)}><Trash2 size={14} /></button></span></div>)}</div></div>
+    {formOpen && <div className="modal-backdrop"><section className="platform-modal"><div className="modal-head"><div><span className="eyebrow">INTEGRATIONS</span><h2>New connection</h2><p>Save a reusable resource for workflow tasks.</p></div><button onClick={() => setFormOpen(false)}><X size={17} /></button></div><div className="modal-fields"><label>Name<input aria-label="Connection name" value={draft.name} placeholder="crm_api" onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label><div className="compact-fields"><label>Type<select className="native-select" aria-label="Connection type" value={draft.type} onChange={(event) => setDraft({ ...draft, type: event.target.value })}><option>HTTP</option><option>Kafka</option><option>OpenAI</option><option>PostgreSQL</option></select></label><label>Category<select className="native-select" aria-label="Connection category" value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value as IntegrationRecord['category'] })}><option>HTTP</option><option>EVENT</option><option>AI MODEL</option><option>DATABASE</option></select></label></div><label>Endpoint or resource<input aria-label="Connection endpoint" value={draft.endpoint} placeholder="https://api.example.local" onChange={(event) => setDraft({ ...draft, endpoint: event.target.value })} /></label><label>Owner<input aria-label="Connection owner" value={draft.owner} onChange={(event) => setDraft({ ...draft, owner: event.target.value })} /></label></div><div className="modal-actions"><button className="outline-button" onClick={() => setFormOpen(false)}>Cancel</button><button className="primary-action" onClick={save}><Check size={14} /> Save connection</button></div></section></div>}
+  </PageFrame>
 }
 
 type ResourceView = Exclude<PlatformView, 'executions' | 'execution-detail' | 'run-workflow' | 'queue' | 'events' | 'task-definitions' | 'event-handlers' | 'schedulers' | 'schemas' | 'api' | 'integrations' | 'access'>
