@@ -43,4 +43,11 @@ describe('workflow API idempotency', () => {
       vi.useRealTimers()
     }
   })
+
+  it('returns polling worker details for a selected queue', async () => {
+    const workers = await workflowApi.listQueueWorkers('http_request')
+    expect(workers).toHaveLength(2)
+    expect(workers[0]).toMatchObject({ workerId: 'worker-http-01', domain: 'prod', status: 'ACTIVE' })
+    await expect(workflowApi.listQueueWorkers('unknown_queue')).resolves.toEqual([])
+  })
 })

@@ -126,12 +126,32 @@ function TaskExecutionModal({ executionId, event, onClose, onUpdated }: { execut
 function QueueMonitorPage() {
   const [queues, setQueues] = useState<QueueRecord[]>([])
   const [query, setQuery] = useState('')
+  const [selectedQueue, setSelectedQueue] = useState<string | null>(null)
+  const [workers, setWorkers] = useState<Awaited<ReturnType<typeof workflowApi.listQueueWorkers>>>([])
+  const [refreshSeconds, setRefreshSeconds] = useState('0')
   const refresh = () => { void workflowApi.listQueues().then(setQueues) }
   useEffect(() => { refresh() }, [])
+  useEffect(() => {
+    if (!selectedQueue) { setWorkers([]); return undefined }
+    void workflowApi.listQueueWorkers(selectedQueue).then(setWorkers)
+    return undefined
+  }, [selectedQueue])
+  useEffect(() => {
+    const seconds = Number(refreshSeconds)
+    if (!seconds) return undefined
+    const timer = globalThis.setInterval(refresh, seconds * 1000)
+    return () => globalThis.clearInterval(timer)
+  }, [refreshSeconds])
   const visible = queues.filter((queue) => `${queue.queue} ${queue.taskType}`.toLowerCase().includes(query.toLowerCase()))
+  const selected = queues.find((queue) => queue.queue === selectedQueue)
   const inProgress = queues.reduce((sum, queue) => sum + queue.inProgress, 0)
   const unprocessed = queues.reduce((sum, queue) => sum + queue.unprocessed, 0)
-  return <PageFrame eyebrow="EXECUTIONS / QUEUE MONITOR" title="Queue Monitor" description="Inspect worker queues, throughput and pending work." actions={<button className="outline-button" onClick={refresh}><RefreshCw size={15} /> Refresh</button>}><div className="metric-cards"><MetricCard icon={Activity} label="In progress" value={inProgress} tone="blue" /><MetricCard icon={Clock3} label="Unprocessed" value={unprocessed} tone="amber" /><MetricCard icon={Server} label="Active queues" value={queues.length} tone="green" /></div><Toolbar><SearchBox value={query} onChange={setQuery} placeholder="Search queues..." /></Toolbar><div className="platform-card"><div className="platform-table"><div className="platform-table-head"><span>Queue</span><span>Task type</span><span>In progress</span><span>Unprocessed</span><span>Rate limit</span><span>Updated</span></div>{visible.map((queue) => <div className="platform-table-row static" key={queue.queue}><span><strong>{queue.queue}</strong></span><span>{queue.taskType}</span><span>{queue.inProgress}</span><span className={queue.unprocessed ? 'warning-text' : ''}>{queue.unprocessed}</span><span>{queue.rateLimit}/min</span><span>{queue.updatedAt}</span></div>)}</div></div></PageFrame>
+  return <PageFrame eyebrow="EXECUTIONS / QUEUE MONITOR" title="Queue Monitor" description="Inspect worker queues, throughput and pending work." actions={<button className="outline-button" onClick={refresh}><RefreshCw size={15} /> Refresh</button>}>
+    <div className="metric-cards"><MetricCard icon={Activity} label="In progress" value={inProgress} tone="blue" /><MetricCard icon={Clock3} label="Unprocessed" value={unprocessed} tone="amber" /><MetricCard icon={Server} label="Active queues" value={queues.length} tone="green" /></div>
+    <Toolbar><SearchBox value={query} onChange={setQuery} placeholder="Search queues..." /><label className="platform-select"><RefreshCw size={14} /><span>Auto refresh</span><select aria-label="Auto refresh" value={refreshSeconds} onChange={(event) => setRefreshSeconds(event.target.value)}><option value="0">Off</option><option value="5">5 sec</option><option value="15">15 sec</option><option value="30">30 sec</option></select></label><span className="toolbar-count">{visible.length} queues · select a row for workers</span></Toolbar>
+    <div className="platform-card"><div className="platform-card-head"><div><strong>Polling queues</strong><span>Queue size and worker polling activity from the latest refresh.</span></div><Filter size={17} /></div><div className="platform-table"><div className="platform-table-head"><span>Queue</span><span>Task type</span><span>In progress</span><span>Unprocessed</span><span>Rate limit</span><span>Updated</span></div>{visible.map((queue) => <button className={`platform-table-row queue-row ${selectedQueue === queue.queue ? 'selected' : ''}`} key={queue.queue} onClick={() => setSelectedQueue(queue.queue)}><span><strong>{queue.queue}</strong><small>{selectedQueue === queue.queue ? 'Selected · showing workers below' : 'Select to inspect workers'}</small></span><span>{queue.taskType}</span><span>{queue.inProgress}</span><span className={queue.unprocessed ? 'warning-text' : ''}>{queue.unprocessed}</span><span>{queue.rateLimit}/min</span><span>{queue.updatedAt}</span></button>)}</div></div>
+    {selected && <div className="platform-card queue-worker-card"><div className="platform-card-head"><div><strong>Workers polling {selected.queue}</strong><span>{workers.length ? `${workers.length} worker${workers.length === 1 ? '' : 's'} reported` : 'No polling workers reported for this queue.'}</span></div><button className="outline-button compact-button" onClick={() => void workflowApi.listQueueWorkers(selected.queue).then(setWorkers)}><RefreshCw size={13} /> Refresh workers</button></div>{workers.length ? <div className="queue-worker-table"><div className="queue-worker-head"><span>Worker</span><span>Domain</span><span>Last poll</span><span>Status</span></div>{workers.map((worker) => <div className="queue-worker-row" key={worker.workerId}><span><strong>{worker.workerId}</strong></span><span>{worker.domain}</span><span>{worker.lastPollAt}</span><span><StatusPill value={worker.status} /></span></div>)}</div> : <EmptyState icon={Server} title="No polling workers" detail="There are no active worker heartbeats for this queue." />}</div>}
+  </PageFrame>
 }
 
 function MetricCard({ icon: Icon, label, value, tone }: { icon: typeof Activity; label: string; value: number; tone: string }) { return <div className={`metric-card ${tone}`}><Icon size={18} /><span>{label}</span><strong>{value}</strong></div> }

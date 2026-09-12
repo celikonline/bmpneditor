@@ -13,6 +13,7 @@ export type TaskDefinitionRecord = { name: string; description: string; owner: s
 export type EventHandlerRecord = { name: string; event: string; action: string; workflowName: string; active: boolean; updatedAt: string }
 export type ScheduleRecord = { name: string; workflowName: string; cronExpression: string; timezone: string; active: boolean; nextRun: string; catchUp: boolean; overlapPolicy: 'ALLOW' | 'SKIP'; startTime?: string; endTime?: string; updatedAt: string }
 export type QueueRecord = { queue: string; taskType: string; inProgress: number; unprocessed: number; rateLimit: number; updatedAt: string }
+export type QueueWorkerRecord = { workerId: string; domain: string; lastPollAt: string; status: 'ACTIVE' | 'IDLE' | 'STALE' }
 export type EventRecord = { id: string; event: string; status: 'RECEIVED' | 'PROCESSED' | 'FAILED'; source: string; receivedAt: string; payload: unknown }
 
 const executionByKey = new Map<string, ExecutionRecord>()
@@ -169,6 +170,18 @@ export const workflowApi = {
       { queue: 'check_status', taskType: 'SIMPLE', inProgress: 1, unprocessed: 4, rateLimit: 25, updatedAt: 'Now' },
       { queue: 'notifications', taskType: 'EVENT', inProgress: 0, unprocessed: 0, rateLimit: 100, updatedAt: 'Now' },
     ])
+  },
+
+  listQueueWorkers(queue: string): Promise<QueueWorkerRecord[]> {
+    const workers: Record<string, QueueWorkerRecord[]> = {
+      http_request: [
+        { workerId: 'worker-http-01', domain: 'prod', lastPollAt: '12 seconds ago', status: 'ACTIVE' },
+        { workerId: 'worker-http-02', domain: 'prod', lastPollAt: '41 seconds ago', status: 'IDLE' },
+      ],
+      check_status: [{ workerId: 'worker-status-01', domain: 'prod', lastPollAt: '8 seconds ago', status: 'ACTIVE' }],
+      notifications: [],
+    }
+    return Promise.resolve(workers[queue] ?? [])
   },
 
   listEvents(): Promise<EventRecord[]> {

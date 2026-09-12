@@ -253,6 +253,16 @@ test('navigates the supporting Conductor platform screens from the sidebar', asy
   await expect(page.getByRole('heading', { name: 'Users', exact: true })).toBeVisible()
 })
 
+test('inspects polling workers from the queue monitor', async ({ page }) => {
+  await page.addInitScript(() => window.localStorage.clear())
+  await page.goto('/queueMonitor')
+  await page.getByRole('button', { name: /http_request/ }).click()
+  await expect(page.getByText('Workers polling http_request', { exact: true })).toBeVisible()
+  await expect(page.getByText('worker-http-01', { exact: true })).toBeVisible()
+  await page.getByLabel('Auto refresh').selectOption('5')
+  await expect(page.getByLabel('Auto refresh')).toHaveValue('5')
+})
+
 test('creates and removes task definitions and schedules', async ({ page }) => {
   await page.addInitScript(() => window.localStorage.clear())
   await page.goto('/taskDefs')
