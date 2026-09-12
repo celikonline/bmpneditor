@@ -1,5 +1,5 @@
 import type { Edge } from '@xyflow/react'
-import { validateWorkflow, type StudioNode, type WorkflowSettings } from './workflowStore'
+import { validateWorkflow, validateWorkflowSettings, type StudioNode, type WorkflowSettings } from './workflowStore'
 import { taskCatalog, type TaskCatalogItem } from './taskCatalog'
 
 export type TaskExecutionStatus = 'SCHEDULED' | 'IN_PROGRESS' | 'SKIPPED' | 'TIMED_OUT' | 'CANCELED' | 'FAILED' | 'FAILED_WITH_TERMINAL_ERROR' | 'COMPLETED_WITH_ERRORS' | 'COMPLETED'
@@ -164,7 +164,7 @@ export const workflowApi = {
   },
 
   save(settings: WorkflowSettings, nodes: StudioNode[], edges: Edge[] = []) {
-    const errors = validateWorkflow(nodes, edges).filter((issue) => issue.severity === 'error')
+    const errors = [...validateWorkflow(nodes, edges), ...validateWorkflowSettings(settings)].filter((issue) => issue.severity === 'error')
     if (errors.length) return Promise.reject(new Error(`Save blocked: ${errors[0].message}`))
     const savedAt = new Date().toISOString()
     const taskCount = nodes.filter((node) => node.type === 'studio' || node.type === 'switch' || node.type === 'loop').length

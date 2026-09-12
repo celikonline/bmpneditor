@@ -45,7 +45,7 @@ import {
   X,
   Zap,
 } from 'lucide-react'
-import { buildWorkflowJson, validateWorkflow, useWorkflowStore, type StudioNode, type TaskConfig, type TaskKind, type WorkflowParameter, type WorkflowSettings, type WorkflowVersionSnapshot } from './workflowStore'
+import { buildWorkflowJson, validateWorkflow, validateWorkflowSettings, useWorkflowStore, type StudioNode, type TaskConfig, type TaskKind, type WorkflowParameter, type WorkflowSettings, type WorkflowVersionSnapshot } from './workflowStore'
 import { bpmnToWorkflow, conductorJsonToGraph, toConductorDefinition, workflowToBpmn, type ImportReview } from './adapters'
 import { workflowApi, type ExecutionRecord, type RealtimeExecutionEvent, type TaskExecutionStatus, type WorkflowDefinitionRecord } from './workflowApi'
 import { can, type Role } from './security'
@@ -238,7 +238,7 @@ function App() {
     void workflowApi.getTaskCatalog().then((items) => { if (active) { setCatalogItems(items); setCatalogError(null); setCatalogLoading(false) } }).catch((error: unknown) => { if (active) { setCatalogError(error instanceof Error ? error.message : 'Task catalog could not be loaded.'); setCatalogLoading(false) } })
     return () => { active = false }
   }, [])
-  const validation = useMemo(() => validateWorkflow(nodes, edges), [nodes, edges])
+  const validation = useMemo(() => [...validateWorkflow(nodes, edges), ...validateWorkflowSettings(workflow)], [nodes, edges, workflow])
   const workflowJson = useMemo(() => JSON.stringify(buildWorkflowJson(nodes, workflow), null, 2), [nodes, workflow])
   const openQuickAddFromNode = useCallback((nodeId: string, branchName?: string) => { setSelectedId(nodeId); setOperationContext({ nodeId, port: branchName ? 'branch' : 'bottom', branchName }); setDrawerOpen(false); setQuickAddOpen(true); setActiveTab('Task') }, [])
   const currentVersionIsPublished = useMemo(() => versionHistory.some((snapshot) => snapshot.version === workflow.version && snapshot.status === 'PUBLISHED'), [versionHistory, workflow.version])

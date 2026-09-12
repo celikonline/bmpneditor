@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest'
-import { buildTaskInputParameters, buildWorkflowJson, validateWorkflow, useWorkflowStore, type StudioNode } from './workflowStore'
+import { buildTaskInputParameters, buildWorkflowJson, validateWorkflow, validateWorkflowSettings, useWorkflowStore, type StudioNode } from './workflowStore'
 import { bpmnToWorkflow, conductorAdapter, conductorJsonToGraph, toConductorDefinition, workflowToBpmn } from './adapters'
 
 const node = (id: string, label: string, ref: string, type: StudioNode['type'] = 'studio'): StudioNode => ({
@@ -11,6 +11,12 @@ const node = (id: string, label: string, ref: string, type: StudioNode['type'] =
 })
 
 describe('workflow validation', () => {
+  it('validates enforced workflow schemas and parameter keys', () => {
+    const issues = validateWorkflowSettings({ name: 'demo', description: '', version: 1, schemaVersion: 2, enforceSchema: true, timeoutSeconds: 30, restartable: true, idempotencyStrategy: 'FAIL', inputSchema: '{', outputSchema: '{}', inputParameters: [{ key: 'id', value: '' }, { key: 'id', value: '' }] })
+    expect(issues.some((issue) => issue.message.includes('Input schema must be valid JSON Schema'))).toBe(true)
+    expect(issues.some((issue) => issue.message.includes('duplicate key'))).toBe(true)
+  })
+
   it('accepts a connected graph with unique references', () => {
     const nodes = [node('start', 'Start', 'start', 'start'), node('task', 'check_endpoint', 'check_endpoint_ref'), node('end', 'End', 'end', 'end')]
     const issues = validateWorkflow(nodes, [

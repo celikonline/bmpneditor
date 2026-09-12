@@ -509,3 +509,36 @@ export function validateWorkflow(nodes: StudioNode[], edges: Edge[]) {
   if ([...nodeIds].some(visit)) problems.push({ severity: 'error', message: 'Workflow graph contains a circular reference. Use a Do While operator for intentional loops.' })
   return problems
 }
+
+export function validateWorkflowSettings(workflow: WorkflowSettings) {
+  const problems: Array<{ severity: 'error' | 'warning'; message: string }> = []
+  if (!workflow.name.trim()) problems.push({ severity: 'error', message: 'Workflow name is required.' })
+  if (!Number.isFinite(workflow.version) || workflow.version < 1) problems.push({ severity: 'error', message: 'Workflow version must be a positive number.' })
+  if (!Number.isFinite(workflow.timeoutSeconds) || workflow.timeoutSeconds < 0) problems.push({ severity: 'error', message: 'Workflow timeout must be zero or greater.' })
+  if (workflow.concurrentLimit !== undefined && workflow.concurrentLimit < 0) problems.push({ severity: 'error', message: 'Concurrent execution limit cannot be negative.' })
+  const checkSchema = (label: string, source?: string) => {
+    if (!source?.trim()) { problems.push({ severity: 'error', message: `${label} is required when schema enforcement is enabled.` }); return }
+    try {
+      const parsed = JSON.parse(source) as { type?: string }
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('root must be an object')
+      if (parsed.type && !['object', 'array', 'string', 'number', 'integer', 'boolean', 'null'].includes(parsed.type)) throw new Error(`unsupported root type "${parsed.type}"`)
+    } catch (error) {
+      problems.push({ severity: 'error', message: `${label} must be valid JSON Schema${error instanceof Error ? ` (${error.message})` : ''}.` })
+    }
+  }
+  if (workflow.enforceSchema) {
+    checkSchema('Input schema', workflow.inputSchema)
+    checkSchema('Output schema', workflow.outputSchema)
+  }
+  const checkParameters = (label: string, parameters?: WorkflowParameter[]) => {
+    const keys = new Set<string>()
+    parameters?.forEach((parameter) => {
+      if (!parameter.key.trim()) problems.push({ severity: 'warning', message: `${label} contains a parameter without a key.` })
+      else if (keys.has(parameter.key.trim())) problems.push({ severity: 'error', message: `${label} contains duplicate key "${parameter.key.trim()}".` })
+      keys.add(parameter.key.trim())
+    })
+  }
+  checkParameters('Input parameters', workflow.inputParameters)
+  checkParameters('Output parameters', workflow.outputParameters)
+  return problems
+}
