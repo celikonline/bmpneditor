@@ -207,6 +207,17 @@ test('navigates the supporting Conductor platform screens from the sidebar', asy
   await expect(page.getByRole('heading', { name: 'API Reference', exact: true })).toBeVisible()
 })
 
+test('runs a workflow from the platform Run Workflow screen', async ({ page }) => {
+  await page.addInitScript(() => window.localStorage.clear())
+  await page.goto('/runWorkflow')
+  await expect(page.getByRole('heading', { name: 'Run Workflow', exact: true })).toBeVisible()
+  await page.getByLabel('Input params (JSON)').fill('{"source":"e2e"}')
+  await page.getByLabel('Execution name').fill('platform-run-e2e')
+  await page.getByRole('button', { name: 'Run workflow', exact: true }).click()
+  await expect(page.getByText('Execution started', { exact: true })).toBeVisible()
+  await expect(page.getByText('platform-run-e2e', { exact: false })).toBeVisible()
+})
+
 test('persists saved workflows and exposes definition list actions', async ({ page }) => {
   await page.addInitScript(() => window.localStorage.clear())
   await page.goto('/')

@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Activity, Archive, Check, ChevronLeft, Clock3, Code2, Copy, FileJson, Filter, Globe2, Plus, RefreshCw, Search, Server, Settings2, UsersRound, Workflow, X } from 'lucide-react'
+import { Activity, Archive, Check, ChevronLeft, Clock3, Code2, Copy, FileJson, Filter, Globe2, Play, Plus, RefreshCw, Search, Server, Settings2, UsersRound, Workflow, X } from 'lucide-react'
 import { workflowApi, type EventHandlerRecord, type EventRecord, type ExecutionRecord, type QueueRecord, type ScheduleRecord, type TaskDefinitionRecord } from './workflowApi'
 
-export type PlatformView = 'executions' | 'execution-detail' | 'queue' | 'events' | 'task-definitions' | 'event-handlers' | 'schedulers' | 'schemas' | 'api' | 'integrations' | 'access'
+export type PlatformView = 'executions' | 'execution-detail' | 'run-workflow' | 'queue' | 'events' | 'task-definitions' | 'event-handlers' | 'schedulers' | 'schemas' | 'api' | 'integrations' | 'access'
 
 type Navigation = (view: PlatformView) => void
 
 export function PlatformPage({ view, onNavigate }: { view: PlatformView; onNavigate: Navigation }) {
   if (view === 'executions' || view === 'execution-detail') return <ExecutionsPage />
+  if (view === 'run-workflow') return <RunWorkflowPage />
   if (view === 'queue') return <QueueMonitorPage />
   if (view === 'events') return <EventMonitorPage />
   if (view === 'task-definitions') return <TaskDefinitionsPage />
@@ -43,10 +44,49 @@ function ExecutionsPage() {
   </PageFrame>
 }
 
+function RunWorkflowPage() {
+  const [definitions, setDefinitions] = useState<Awaited<ReturnType<typeof workflowApi.listWorkflowDefinitions>>>([])
+  const [workflowName, setWorkflowName] = useState('api_polling_workflow')
+  const [version, setVersion] = useState('1')
+  const [input, setInput] = useState('{\n  "jobId": "demo-job-001"\n}')
+  const [idempotencyKey, setIdempotencyKey] = useState('')
+  const [strategy, setStrategy] = useState<'RETURN_EXISTING' | 'FAIL' | 'FAIL_ON_RUNNING'>('RETURN_EXISTING')
+  const [correlationId, setCorrelationId] = useState('')
+  const [executionName, setExecutionName] = useState('')
+  const [result, setResult] = useState<ExecutionRecord | null>(null)
+  const [error, setError] = useState('')
+  useEffect(() => { void workflowApi.listWorkflowDefinitions().then((items) => { setDefinitions(items); if (items[0]) { setWorkflowName(items[0].name); setVersion(String(items[0].version)) } }) }, [])
+  const selected = definitions.find((item) => item.name === workflowName)
+  const run = () => {
+    setError('')
+    let parsed: unknown
+    try { parsed = JSON.parse(input) } catch { setError('Input params must be valid JSON.'); return }
+    const tasks = selected?.nodes?.filter((node) => ['studio', 'loop', 'switch'].includes(node.type)) ?? [{ id: 'run-task', type: 'studio' as const, position: { x: 0, y: 0 }, data: { label: 'run_workflow_task', ref: 'run_workflow_task_ref', kind: 'SIMPLE' as const } }]
+    void workflowApi.startExecution({ workflowName, version: Number(version) || selected?.version || 1, idempotencyKey: idempotencyKey.trim() || `run-${workflowName}-${Date.now()}`, strategy, tasks, executionInput: parsed, correlationId: correlationId.trim() || undefined, executionName: executionName.trim() || undefined, onEvent: () => undefined }).then(setResult).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'Workflow could not be started.'))
+  }
+  return <PageFrame eyebrow="EXECUTIONS / RUN WORKFLOW" title="Run Workflow" description="Start a version with controlled input, idempotency and correlation settings." actions={<button className="outline-button" onClick={() => { setInput('{}'); setResult(null); setError('') }}><RefreshCw size={15} /> Reset</button>}><div className="run-workflow-layout"><div className="platform-card"><div className="platform-card-head"><div><strong>Workflow request</strong><span>Select a definition and provide input parameters.</span></div><Play size={17} /></div><div className="run-workflow-form"><label>Workflow name<select className="native-select" value={workflowName} onChange={(event) => { setWorkflowName(event.target.value); const item = definitions.find((definition) => definition.name === event.target.value); if (item) setVersion(String(item.version)) }}>{definitions.map((item) => <option key={item.name}>{item.name}</option>)}</select></label><label>Version<input type="number" min="1" value={version} onChange={(event) => setVersion(event.target.value)} /></label><label>Input params (JSON)<textarea className="execute-input" value={input} onChange={(event) => setInput(event.target.value)} spellCheck={false} /></label><div className="run-workflow-actions"><button className="primary-action" onClick={run}><Play size={14} fill="currentColor" /> Run workflow</button></div></div></div><div className="platform-card"><div className="platform-card-head"><div><strong>Execution options</strong><span>Idempotency prevents accidental duplicate starts.</span></div></div><div className="run-workflow-form"><label>Idempotency key<input value={idempotencyKey} placeholder="Generated automatically" onChange={(event) => setIdempotencyKey(event.target.value)} /></label><label>Idempotency strategy<select className="native-select" value={strategy} onChange={(event) => setStrategy(event.target.value as typeof strategy)}><option value="RETURN_EXISTING">Return existing</option><option value="FAIL">Fail on duplicate</option><option value="FAIL_ON_RUNNING">Fail on running</option></select></label><label>Correlation ID<input value={correlationId} placeholder="incident-123" onChange={(event) => setCorrelationId(event.target.value)} /></label><label>Execution name<input value={executionName} placeholder="health-check-run" onChange={(event) => setExecutionName(event.target.value)} /></label></div></div></div>{error && <div className="platform-error">{error}</div>}{result && <div className="platform-card run-result"><div><strong>Execution started</strong><span>{result.executionId} · {result.workflowName} · version {result.version}{result.executionName ? ` · ${result.executionName}` : ''}</span></div><StatusPill value={result.status} /></div>}<div className="platform-card"><div className="platform-card-head"><div><strong>Run history</strong><span>Use Workflow Executions for the full task timeline.</span></div><Clock3 size={17} /></div><div className="run-history-hint">Every run is stored in the local execution registry and can be inspected from the Executions screen.</div></div></PageFrame>
+}
+
 function ExecutionDetail({ record, onBack }: { record: ExecutionRecord; onBack: () => void }) {
-  return <PageFrame eyebrow="EXECUTIONS / DETAIL" title={record.executionName || record.executionId} description={`${record.workflowName} · version ${record.version}`} actions={<button className="outline-button" onClick={onBack}><ChevronLeft size={15} /> Back to executions</button>}>
-    <div className="detail-grid"><div className="platform-card"><div className="platform-card-head"><div><strong>Execution summary</strong><span>{record.executionId}</span></div><StatusPill value={record.status} /></div><div className="metric-grid"><div><span>Started</span><strong>{formatTime(record.startedAt)}</strong></div><div><span>Completed</span><strong>{formatTime(record.completedAt)}</strong></div><div><span>Correlation ID</span><strong>{record.correlationId || '—'}</strong></div><div><span>Priority</span><strong>{record.priority ?? 0}</strong></div></div></div><div className="platform-card"><div className="platform-card-head"><div><strong>Execution input</strong><span>JSON payload</span></div><Code2 size={17} /></div><pre className="platform-code">{JSON.stringify(record.input, null, 2)}</pre></div></div>
-    <div className="platform-card"><div className="platform-card-head"><div><strong>Task timeline</strong><span>{record.events.length} task events</span></div></div>{record.events.length === 0 ? <EmptyState icon={Clock3} title="No task events yet" detail="This execution has not emitted task events." /> : <div className="execution-task-table">{record.events.map((event, index) => <div className="execution-task-row" key={`${event.taskReferenceName}-${index}`}><span className="timeline-dot" /><div><strong>{event.taskReferenceName}</strong><small>{formatTime(event.at)}{event.workerId ? ` · ${event.workerId}` : ''}</small></div><StatusPill value={event.status} /><span className="task-reason">{event.reasonForIncompletion || ''}</span></div>)}</div>}</div>
+  const [current, setCurrent] = useState(record)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const refresh = () => { void workflowApi.getExecution(current.executionId).then((next) => { if (next) setCurrent(next) }) }
+  useEffect(() => {
+    if (!['RUNNING', 'PAUSED'].includes(current.status)) return undefined
+    const timer = globalThis.setInterval(refresh, 500)
+    return () => globalThis.clearInterval(timer)
+  }, [current.executionId, current.status])
+  const operate = (operation: () => Promise<ExecutionRecord>) => {
+    setBusy(true)
+    setError('')
+    void operation().then(setCurrent).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'Execution operation failed.')).finally(() => setBusy(false))
+  }
+  const actions = <><button className="outline-button" onClick={refresh} disabled={busy}><RefreshCw size={15} /> Refresh</button>{current.status === 'RUNNING' && <button className="outline-button" onClick={() => operate(() => workflowApi.pauseExecution(current.executionId))} disabled={busy}>Pause</button>}{current.status === 'PAUSED' && <button className="primary-action" onClick={() => operate(() => workflowApi.resumeExecution(current.executionId))} disabled={busy}>Resume</button>}{['RUNNING', 'PAUSED'].includes(current.status) && <button className="danger-button" onClick={() => operate(() => workflowApi.terminateExecution(current.executionId))} disabled={busy}>Terminate</button>}{['COMPLETED', 'FAILED', 'TERMINATED', 'TIMED_OUT'].includes(current.status) && <button className="outline-button" onClick={() => operate(() => workflowApi.retryExecution(current.executionId))} disabled={busy}>Retry</button>}<button className="outline-button" onClick={onBack}><ChevronLeft size={15} /> Back</button></>
+  return <PageFrame eyebrow="EXECUTIONS / DETAIL" title={current.executionName || current.executionId} description={`${current.workflowName} · version ${current.version}`} actions={actions}>
+    {error && <div className="platform-error">{error}</div>}
+    <div className="detail-grid"><div className="platform-card"><div className="platform-card-head"><div><strong>Execution summary</strong><span>{current.executionId}</span></div><StatusPill value={current.status} /></div><div className="metric-grid"><div><span>Started</span><strong>{formatTime(current.startedAt)}</strong></div><div><span>Completed</span><strong>{formatTime(current.completedAt)}</strong></div><div><span>Correlation ID</span><strong>{current.correlationId || '—'}</strong></div><div><span>Priority</span><strong>{current.priority ?? 0}</strong></div></div></div><div className="platform-card"><div className="platform-card-head"><div><strong>Execution input</strong><span>JSON payload</span></div><Code2 size={17} /></div><pre className="platform-code">{JSON.stringify(current.input, null, 2)}</pre></div></div>
+    <div className="platform-card"><div className="platform-card-head"><div><strong>Task timeline</strong><span>{current.events.length} task events</span></div></div>{current.events.length === 0 ? <EmptyState icon={Clock3} title="No task events yet" detail="This execution has not emitted task events." /> : <div className="execution-task-table">{current.events.map((event, index) => <div className="execution-task-row" key={`${event.taskReferenceName}-${index}`}><span className="timeline-dot" /><div><strong>{event.taskReferenceName}</strong><small>{formatTime(event.at)}{event.workerId ? ` · ${event.workerId}` : ''}</small></div><StatusPill value={event.status} /><span className="task-reason">{event.reasonForIncompletion || ''}</span></div>)}</div>}</div>
   </PageFrame>
 }
 

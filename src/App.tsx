@@ -139,6 +139,7 @@ const graphSnapshot = (nodes: StudioNode[], edges: Edge[]): GraphSnapshot => ({ 
 function resolveAppPage(pathname: string): AppPage {
   if (pathname === '/workflows') return 'list'
   if (pathname === '/executions') return 'executions'
+  if (pathname === '/runWorkflow') return 'run-workflow'
   if (pathname === '/execution') return 'execution-detail'
   if (pathname === '/queueMonitor') return 'queue'
   if (pathname === '/eventMonitor') return 'events'
@@ -153,7 +154,7 @@ function resolveAppPage(pathname: string): AppPage {
 }
 
 function platformPath(view: PlatformView) {
-  return ({ executions: '/executions', 'execution-detail': '/execution', queue: '/queueMonitor', events: '/eventMonitor', 'task-definitions': '/taskDefs', 'event-handlers': '/eventHandlers', schedulers: '/schedules', schemas: '/schemas', api: '/apiDocs', integrations: '/integrations', access: '/accessControl' } as Record<PlatformView, string>)[view]
+  return ({ executions: '/executions', 'execution-detail': '/execution', 'run-workflow': '/runWorkflow', queue: '/queueMonitor', events: '/eventMonitor', 'task-definitions': '/taskDefs', 'event-handlers': '/eventHandlers', schedulers: '/schedules', schemas: '/schemas', api: '/apiDocs', integrations: '/integrations', access: '/accessControl' } as Record<PlatformView, string>)[view]
 }
 
 function App() {
@@ -866,13 +867,13 @@ function StudioSidebar({ onOpenWorkflowList, onNavigate, activePage }: { onOpenW
   const [collapsed, setCollapsed] = useState(false)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({ Executions: true, Definitions: true })
   const sections = [
-    { name: 'Executions', icon: Play, items: ['Workflow', 'Agents', 'Human Tasks', 'Scheduler', 'Queue Monitor', 'Workers', 'Event Monitor'] },
+    { name: 'Executions', icon: Play, items: ['Workflow', 'Run Workflow', 'Agents', 'Human Tasks', 'Scheduler', 'Queue Monitor', 'Workers', 'Event Monitor'] },
     { name: 'Definitions', icon: FileJson, items: ['Workflow', 'Agents', 'Task', 'User Forms', 'Event Handler', 'Scheduler', 'Secrets', 'Webhook', 'AI Prompts', 'Environment Variables', 'Schemas'] },
     { name: 'Integrations', icon: Globe2, items: ['Connections and Resources'] },
     { name: 'Access Control', icon: UsersRound, items: ['Applications', 'Groups', 'Users'] },
     { name: 'APIs', icon: Settings2, items: ['Services', 'Authentication'] },
   ]
-  const routeFor = (section: string, item: string): PlatformView | null => { if (section === 'Executions') return ({ Workflow: 'executions', Scheduler: 'schedulers', 'Queue Monitor': 'queue', 'Event Monitor': 'events' } as Record<string, PlatformView>)[item] ?? null; if (section === 'Definitions') return ({ Task: 'task-definitions', 'Event Handler': 'event-handlers', Scheduler: 'schedulers', Schemas: 'schemas' } as Record<string, PlatformView>)[item] ?? null; if (section === 'Integrations') return 'integrations'; if (section === 'Access Control') return 'access'; if (section === 'APIs') return 'api'; return null }
+  const routeFor = (section: string, item: string): PlatformView | null => { if (section === 'Executions') return ({ Workflow: 'executions', 'Run Workflow': 'run-workflow', Scheduler: 'schedulers', 'Queue Monitor': 'queue', 'Event Monitor': 'events' } as Record<string, PlatformView>)[item] ?? null; if (section === 'Definitions') return ({ Task: 'task-definitions', 'Event Handler': 'event-handlers', Scheduler: 'schedulers', Schemas: 'schemas' } as Record<string, PlatformView>)[item] ?? null; if (section === 'Integrations') return 'integrations'; if (section === 'Access Control') return 'access'; if (section === 'APIs') return 'api'; return null }
   return <aside className={`studio-sidebar ${collapsed ? 'collapsed' : ''}`}><div className="sidebar-brand"><span className="brand-orb">◈</span>{!collapsed && <strong>orkes</strong>}<button aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} onClick={() => setCollapsed((value) => !value)}>{collapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}</button></div>{!collapsed && <button className="sidebar-search"><Search size={15} /><span>Search</span><small>Ctrl&nbsp;K</small></button>}<button className="sidebar-launch"><Sparkles size={15} /><span>{!collapsed && 'Assistant'}</span></button><nav className="sidebar-nav">{sections.map((section) => <div className="sidebar-section" key={section.name}><button className="sidebar-section-toggle" onClick={() => setExpanded((value) => ({ ...value, [section.name]: !value[section.name] }))}><section.icon size={14} /><span>{!collapsed && section.name}</span>{!collapsed && (expanded[section.name] ? <ChevronDown size={13} /> : <ChevronRight size={13} />)}</button>{!collapsed && expanded[section.name] && <div className="sidebar-items">{section.items.map((item) => { const route = routeFor(section.name, item); const active = (section.name === 'Definitions' && item === 'Workflow' && activePage === 'list') || Boolean(route && activePage === route); return <button className={active ? 'active' : ''} key={`${section.name}-${item}`} onClick={() => section.name === 'Definitions' && item === 'Workflow' ? onOpenWorkflowList() : route && onNavigate(route)}>{item}</button> })}</div>}</div>)}</nav>{!collapsed && <div className="sidebar-footer"><div className="sidebar-user"><span>ÖC</span><div><strong>Özgür celik</strong><small>celikonline@gmail.com</small></div></div><small className="sidebar-version">Orkes Platform Version<br />2.59.7 | v1.8.0</small></div>}</aside>
 }
 
