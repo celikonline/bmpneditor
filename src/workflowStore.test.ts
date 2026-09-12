@@ -140,6 +140,13 @@ describe('BPMN adapter', () => {
     expect(definition.tasks[0]).toMatchObject({ taskReferenceName: 'call_api_ref', type: 'HTTP' })
   })
 
+  it('round-trips workflow variables through Conductor JSON', () => {
+    const definition = toConductorDefinition([node('task', 'Call API', 'call_api_ref')], 'demo_workflow', 1, { variables: [{ key: 'attempt', value: '1' }] })
+    expect(definition.variables).toEqual({ attempt: 1 })
+    const imported = conductorJsonToGraph(definition)
+    expect(imported.workflow.variables).toEqual([{ key: 'attempt', value: '1' }])
+  })
+
   it('round-trips nested operator tasks through the Conductor adapter', () => {
     const nested = { name: 'check_status', taskReferenceName: 'check_status_ref', type: 'HTTP' as const, inputParameters: { url: '${workflow.input.endpointUrl}' }, optional: false }
     const loop: StudioNode = { id: 'loop', type: 'loop', position: { x: 0, y: 0 }, data: { label: 'poll_status', ref: 'poll_status_ref', kind: 'DO_WHILE', config: { loopOver: [nested], loopCondition: 'return true;', retryCount: 2, retryLogic: 'EXPONENTIAL_BACKOFF', backoffJitterMs: 250 } } }

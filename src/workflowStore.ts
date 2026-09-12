@@ -263,6 +263,7 @@ export type WorkflowDraft = {
   idempotencyStrategy: 'FAIL' | 'RETURN_EXISTING' | 'FAIL_ON_RUNNING'
   inputParameters?: WorkflowParameter[]
   outputParameters?: WorkflowParameter[]
+  variables?: WorkflowParameter[]
   tasks: Array<WorkflowTaskDraft & {
     cacheConfig?: { ttlInSecond: number; key: string }
     taskDefinition?: { enforceSchema: boolean; inputSchema?: string; outputSchema?: string }
@@ -273,6 +274,7 @@ export type WorkflowParameter = { key: string; value: string }
 export type WorkflowSettings = Pick<WorkflowDraft, 'name' | 'description' | 'inputSchema' | 'outputSchema' | 'version' | 'schemaVersion' | 'enforceSchema' | 'timeoutSeconds' | 'restartable' | 'failureWorkflow' | 'idempotencyStrategy'> & {
   inputParameters?: WorkflowParameter[]
   outputParameters?: WorkflowParameter[]
+  variables?: WorkflowParameter[]
   enableStatusListener?: boolean
   timeoutPolicy?: 'TIMEOUT_WORKFLOW' | 'TIMEOUT_TASK'
   rateLimitKey?: string
@@ -311,7 +313,7 @@ const defaultOutputSchema = ['{', '  "type": "object",', '  "properties": { "sta
 export const useWorkflowStore = create<WorkflowStore>()(persist((set) => ({
   nodes: [],
   edges: [],
-workflow: { name: 'api_polling_workflow', description: 'Submits a job to an external API, polls for its status until completed or failed, then routes based on the outcome.', inputSchema: defaultInputSchema, outputSchema: defaultOutputSchema, version: 1, schemaVersion: 2, enforceSchema: false, timeoutSeconds: 3600, restartable: true, failureWorkflow: '', idempotencyStrategy: 'FAIL', inputParameters: [{ key: 'jobSubmitUrl', value: '' }, { key: 'jobStatusUrl', value: '' }, { key: 'jobPayload', value: '' }, { key: 'maxIterations', value: '10' }, { key: 'successCallbackUrl', value: '' }, { key: 'failureCallbackUrl', value: '' }], outputParameters: [{ key: 'jobId', value: '${submit_job_ref.output.response.body.jobId}' }, { key: 'finalStatus', value: '${check_status_ref.output.response.body.status}' }, { key: '', value: '${check_status_ref.output.response.body.result}' }], enableStatusListener: false, timeoutPolicy: 'TIMEOUT_WORKFLOW', rateLimitKey: '', concurrentLimit: 0 },
+workflow: { name: 'api_polling_workflow', description: 'Submits a job to an external API, polls for its status until completed or failed, then routes based on the outcome.', inputSchema: defaultInputSchema, outputSchema: defaultOutputSchema, version: 1, schemaVersion: 2, enforceSchema: false, timeoutSeconds: 3600, restartable: true, failureWorkflow: '', idempotencyStrategy: 'FAIL', inputParameters: [{ key: 'jobSubmitUrl', value: '' }, { key: 'jobStatusUrl', value: '' }, { key: 'jobPayload', value: '' }, { key: 'maxIterations', value: '10' }, { key: 'successCallbackUrl', value: '' }, { key: 'failureCallbackUrl', value: '' }], outputParameters: [{ key: 'jobId', value: '${submit_job_ref.output.response.body.jobId}' }, { key: 'finalStatus', value: '${check_status_ref.output.response.body.status}' }, { key: '', value: '${check_status_ref.output.response.body.result}' }], variables: [{ key: 'pollCount', value: '0' }], enableStatusListener: false, timeoutPolicy: 'TIMEOUT_WORKFLOW', rateLimitKey: '', concurrentLimit: 0 },
   dirty: false,
   savedAt: null,
   versionHistory: [],

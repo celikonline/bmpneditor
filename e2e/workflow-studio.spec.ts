@@ -315,6 +315,19 @@ test('persists platform registry resources and supports lifecycle actions', asyn
   await expect(page.getByText('new_agents_2', { exact: true })).not.toBeVisible()
 })
 
+test('edits workflow-level variables in the workflow inspector', async ({ page }) => {
+  await page.addInitScript(() => window.localStorage.clear())
+  await page.goto('/')
+  await page.getByRole('button', { name: /HTTP Task/ }).first().click()
+  await page.locator('.inspector-tabs').getByRole('button', { name: 'Workflow', exact: true }).click()
+  await page.getByRole('button', { name: 'Schema and Parameters', exact: true }).click()
+  await expect(page.getByText('Workflow variables', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Add parameter', exact: true }).last().click()
+  await page.getByLabel('Workflow variables key 2').fill('requestId')
+  await page.getByLabel('Workflow variables value 2').fill('${workflow.input.requestId}')
+  await expect(page.getByLabel('Workflow variables value 2')).toHaveValue('${workflow.input.requestId}')
+})
+
 test('runs a workflow from the platform Run Workflow screen', async ({ page }) => {
   await page.addInitScript(() => window.localStorage.clear())
   await page.goto('/runWorkflow')

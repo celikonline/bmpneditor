@@ -43,6 +43,7 @@ export type ConductorCompatibleWorkflowDefinition = {
   tasks: ConductorCompatibleTask[]
   inputParameters?: Array<string | { key: string; value: string }>
   outputParameters?: Record<string, unknown>
+  variables?: Record<string, unknown>
   timeoutPolicy?: 'TIME_OUT_WF' | 'ALERT_ONLY'
   timeoutSeconds?: number
   restartable?: boolean
@@ -179,6 +180,7 @@ export function toConductorDefinition(nodes: StudioNode[], workflowName: string,
     tasks: canonical.tasks.map(toConductorTask),
     ...(canonical.inputParameters ? { inputParameters: canonical.inputParameters.map((parameter) => parameter.key).filter(Boolean) } : {}),
     ...(canonical.outputParameters ? { outputParameters: Object.fromEntries(canonical.outputParameters.filter((parameter) => parameter.key).map((parameter) => [parameter.key, parameter.value])) } : {}),
+    ...(canonical.variables ? { variables: Object.fromEntries(canonical.variables.filter((parameter) => parameter.key).map((parameter) => [parameter.key, safeJson(parameter.value)])) } : {}),
     ...(canonical.timeoutPolicy ? { timeoutPolicy: canonical.timeoutPolicy === 'TIMEOUT_WORKFLOW' ? 'TIME_OUT_WF' : 'ALERT_ONLY' } : {}),
     ...(canonical.timeoutSeconds != null ? { timeoutSeconds: canonical.timeoutSeconds } : {}),
     ...(canonical.restartable != null ? { restartable: canonical.restartable } : {}),
@@ -300,6 +302,9 @@ function workflowFromConductor(source: Partial<ConductorCompatibleWorkflowDefini
   const outputParameters = source.outputParameters && typeof source.outputParameters === 'object' && !Array.isArray(source.outputParameters)
     ? Object.entries(source.outputParameters).map(([key, value]) => ({ key, value: typeof value === 'string' ? value : JSON.stringify(value) }))
     : undefined
+  const variables = source.variables && typeof source.variables === 'object' && !Array.isArray(source.variables)
+    ? Object.entries(source.variables).map(([key, value]) => ({ key, value: typeof value === 'string' ? value : JSON.stringify(value) }))
+    : undefined
   return {
     ...(typeof source.name === 'string' ? { name: source.name } : {}),
     ...(typeof source.description === 'string' ? { description: source.description } : {}),
@@ -312,6 +317,7 @@ function workflowFromConductor(source: Partial<ConductorCompatibleWorkflowDefini
     ...(typeof source.failureWorkflow === 'string' ? { failureWorkflow: source.failureWorkflow } : {}),
     ...(inputParameters ? { inputParameters } : {}),
     ...(outputParameters ? { outputParameters } : {}),
+    ...(variables ? { variables } : {}),
     ...(source.inputSchema != null ? { inputSchema: schemaText(source.inputSchema) } : {}),
     ...(source.outputSchema != null ? { outputSchema: schemaText(source.outputSchema) } : {}),
   }
