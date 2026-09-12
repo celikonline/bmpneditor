@@ -328,6 +328,23 @@ test('edits workflow-level variables in the workflow inspector', async ({ page }
   await expect(page.getByLabel('Workflow variables value 2')).toHaveValue('${workflow.input.requestId}')
 })
 
+test('persists schema drafts and validates selected schema content', async ({ page }) => {
+  await page.addInitScript(() => { if (!window.sessionStorage.getItem('schema-test-started')) { window.localStorage.clear(); window.sessionStorage.setItem('schema-test-started', '1') } })
+  await page.goto('/schemas')
+  await page.getByRole('button', { name: 'New schema', exact: true }).click()
+  await expect(page.getByRole('button', { name: /new_schema_3/ }).first()).toBeVisible()
+  await page.locator('.schema-code-editor').fill('{')
+  await page.getByRole('button', { name: 'Validate', exact: true }).click()
+  await expect(page.locator('.schema-message.error')).toContainText('JSON')
+  await page.locator('.schema-code-editor').fill('{"type":"object","properties":{"orderId":{"type":"string"}}}')
+  await page.getByRole('button', { name: 'Validate', exact: true }).click()
+  await expect(page.locator('.schema-message.success')).toContainText('1 properties')
+  await page.reload()
+  await expect(page.getByRole('button', { name: /new_schema_3/ }).first()).toBeVisible()
+  await page.getByRole('button', { name: /new_schema_3/ }).first().click()
+  await expect(page.locator('.schema-code-editor')).toHaveValue('{"type":"object","properties":{"orderId":{"type":"string"}}}')
+})
+
 test('runs a workflow from the platform Run Workflow screen', async ({ page }) => {
   await page.addInitScript(() => window.localStorage.clear())
   await page.goto('/runWorkflow')
