@@ -203,6 +203,16 @@ test('filters workflow definitions by lifecycle status', async ({ page }) => {
   await expect(page.getByText('api_polling_workflow', { exact: true })).not.toBeVisible()
 })
 
+test('opens the global command palette with Ctrl+K', async ({ page }) => {
+  await page.addInitScript(() => window.localStorage.clear())
+  await page.goto('/')
+  await page.keyboard.press('Control+k')
+  await expect(page.getByRole('dialog', { name: 'Command palette' })).toBeVisible()
+  await page.getByPlaceholder('Search commands...').fill('Queue monitor')
+  await page.getByRole('button', { name: /Queue monitor/ }).click()
+  await expect(page.getByRole('heading', { name: 'Queue Monitor', exact: true })).toBeVisible()
+})
+
 test('imports raw BPMN XML through the conversion review dialog', async ({ page }) => {
   await page.addInitScript(() => window.localStorage.clear())
   await page.goto('/')

@@ -526,7 +526,7 @@ function App() {
         event.preventDefault()
         flowInstance?.fitView({ padding: 0.18, duration: 260 })
       }
-      if (modifier && (event.key.toLowerCase() === 'k' || event.key.toLowerCase() === 'f') && !isTypingTarget()) {
+      if (modifier && event.key.toLowerCase() === 'f' && !isTypingTarget()) {
         event.preventDefault()
         setCanvasSearchOpen(true)
       }
@@ -794,7 +794,7 @@ function App() {
   }
 
   if (page === 'list') return <WorkflowList onOpen={openBuilder} onOpenWorkflow={openExistingWorkflow} onImportJson={importJsonFromList} />
-  if (page !== 'builder') return <div className="platform-shell"><StudioSidebar onOpenWorkflowList={openWorkflowList} onNavigate={navigatePlatform} activePage={page} /><main className="platform-main"><PlatformPage view={page} onNavigate={navigatePlatform} /></main></div>
+  if (page !== 'builder') return <div className="platform-shell"><StudioSidebar onOpenWorkflowList={openWorkflowList} onOpenBuilder={openBuilder} onNavigate={navigatePlatform} activePage={page} /><main className="platform-main"><PlatformPage view={page} onNavigate={navigatePlatform} /></main></div>
 
   const importBpmn = async (file?: File) => {
     if (!file) return
@@ -853,7 +853,7 @@ function App() {
 
   return (
     <div className="studio-shell">
-      <StudioSidebar onOpenWorkflowList={openWorkflowList} onNavigate={navigatePlatform} activePage={page} />
+      <StudioSidebar onOpenWorkflowList={openWorkflowList} onOpenBuilder={openBuilder} onNavigate={navigatePlatform} activePage={page} />
       <div className="studio-main">
       <header className="topbar">
         <div className="breadcrumb"><button onClick={openWorkflowList}>Workflow Definitions</button><ChevronRight size={14} /><strong>{workflow.name}</strong></div>
@@ -904,9 +904,19 @@ function App() {
   )
 }
 
-function StudioSidebar({ onOpenWorkflowList, onNavigate, activePage }: { onOpenWorkflowList: () => void; onNavigate: (view: PlatformView) => void; activePage: AppPage }) {
+function StudioSidebar({ onOpenWorkflowList, onOpenBuilder, onNavigate, activePage }: { onOpenWorkflowList: () => void; onOpenBuilder: (entry?: BuilderEntry) => void; onNavigate: (view: PlatformView) => void; activePage: AppPage }) {
   const [collapsed, setCollapsed] = useState(false)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({ Executions: true, Definitions: true })
+  const [commandOpen, setCommandOpen] = useState(false)
+  const [commandQuery, setCommandQuery] = useState('')
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); setCommandOpen(true) }
+      if (event.key === 'Escape') setCommandOpen(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
   const sections = [
     { name: 'Executions', icon: Play, items: ['Workflow', 'Run Workflow', 'Agents', 'Human Tasks', 'Scheduler', 'Queue Monitor', 'Workers', 'Event Monitor'] },
     { name: 'Definitions', icon: FileJson, items: ['Workflow', 'Agents', 'Task', 'User Forms', 'Event Handler', 'Scheduler', 'Secrets', 'Webhook', 'AI Prompts', 'Environment Variables', 'Schemas'] },
@@ -915,7 +925,20 @@ function StudioSidebar({ onOpenWorkflowList, onNavigate, activePage }: { onOpenW
     { name: 'APIs', icon: Settings2, items: ['Services', 'Authentication'] },
   ]
   const routeFor = (section: string, item: string): PlatformView | null => { if (section === 'Executions') return ({ Workflow: 'executions', 'Run Workflow': 'run-workflow', Agents: 'agents', 'Human Tasks': 'human-tasks', Scheduler: 'schedulers', 'Queue Monitor': 'queue', Workers: 'workers', 'Event Monitor': 'events' } as Record<string, PlatformView>)[item] ?? null; if (section === 'Definitions') return ({ Workflow: 'executions', Agents: 'agents', Task: 'task-definitions', 'User Forms': 'user-forms', 'Event Handler': 'event-handlers', Scheduler: 'schedulers', Secrets: 'secrets', Webhook: 'webhooks', 'AI Prompts': 'ai-prompts', 'Environment Variables': 'environment', Schemas: 'schemas' } as Record<string, PlatformView>)[item] ?? null; if (section === 'Integrations') return 'integrations'; if (section === 'Access Control') return ({ Applications: 'applications', Groups: 'groups', Users: 'users' } as Record<string, PlatformView>)[item] ?? null; if (section === 'APIs') return ({ Services: 'api', Authentication: 'authentication' } as Record<string, PlatformView>)[item] ?? null; return null }
-  return <aside className={`studio-sidebar ${collapsed ? 'collapsed' : ''}`}><div className="sidebar-brand"><span className="brand-orb">◈</span>{!collapsed && <strong>orkes</strong>}<button aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} onClick={() => setCollapsed((value) => !value)}>{collapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}</button></div>{!collapsed && <button className="sidebar-search"><Search size={15} /><span>Search</span><small>Ctrl&nbsp;K</small></button>}<button className="sidebar-launch"><Sparkles size={15} /><span>{!collapsed && 'Assistant'}</span></button><nav className="sidebar-nav">{sections.map((section) => <div className="sidebar-section" key={section.name}><button className="sidebar-section-toggle" onClick={() => setExpanded((value) => ({ ...value, [section.name]: !value[section.name] }))}><section.icon size={14} /><span>{!collapsed && section.name}</span>{!collapsed && (expanded[section.name] ? <ChevronDown size={13} /> : <ChevronRight size={13} />)}</button>{!collapsed && expanded[section.name] && <div className="sidebar-items">{section.items.map((item) => { const route = routeFor(section.name, item); const active = (section.name === 'Definitions' && item === 'Workflow' && activePage === 'list') || Boolean(route && activePage === route); return <button className={active ? 'active' : ''} key={`${section.name}-${item}`} onClick={() => section.name === 'Definitions' && item === 'Workflow' ? onOpenWorkflowList() : route && onNavigate(route)}>{item}</button> })}</div>}</div>)}</nav>{!collapsed && <div className="sidebar-footer"><div className="sidebar-user"><span>ÖC</span><div><strong>Özgür celik</strong><small>celikonline@gmail.com</small></div></div><small className="sidebar-version">Orkes Platform Version<br />2.59.7 | v1.8.0</small></div>}</aside>
+  const commands: Array<{ name: string; detail: string; run: () => void }> = [
+    { name: 'Create blank workflow', detail: 'Start a new empty definition', run: () => onOpenBuilder('blank') },
+    { name: 'Use workflow template', detail: 'Open the API polling example', run: () => onOpenBuilder('template') },
+    { name: 'Workflow definitions', detail: 'Browse saved workflows', run: onOpenWorkflowList },
+    { name: 'Workflow executions', detail: 'Inspect execution history', run: () => onNavigate('executions') },
+    { name: 'Run workflow', detail: 'Start a workflow with input', run: () => onNavigate('run-workflow') },
+    { name: 'Queue monitor', detail: 'Inspect polling workers', run: () => onNavigate('queue') },
+    { name: 'Schemas', detail: 'Validate workflow contracts', run: () => onNavigate('schemas') },
+    { name: 'Connections and resources', detail: 'Manage external integrations', run: () => onNavigate('integrations') },
+    { name: 'API reference', detail: 'Explore Conductor-compatible APIs', run: () => onNavigate('api') },
+  ]
+  const visibleCommands = commands.filter((command) => `${command.name} ${command.detail}`.toLowerCase().includes(commandQuery.toLowerCase()))
+  const runCommand = (command: { run: () => void }) => { setCommandOpen(false); setCommandQuery(''); command.run() }
+  return <aside className={`studio-sidebar ${collapsed ? 'collapsed' : ''}`}><div className="sidebar-brand"><span className="brand-orb">◈</span>{!collapsed && <strong>orkes</strong>}<button aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} onClick={() => setCollapsed((value) => !value)}>{collapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}</button></div>{!collapsed && <button className="sidebar-search" onClick={() => setCommandOpen(true)}><Search size={15} /><span>Search</span><small>Ctrl&nbsp;K</small></button>}<button className="sidebar-launch"><Sparkles size={15} /><span>{!collapsed && 'Assistant'}</span></button><nav className="sidebar-nav">{sections.map((section) => <div className="sidebar-section" key={section.name}><button className="sidebar-section-toggle" onClick={() => setExpanded((value) => ({ ...value, [section.name]: !value[section.name] }))}><section.icon size={14} /><span>{!collapsed && section.name}</span>{!collapsed && (expanded[section.name] ? <ChevronDown size={13} /> : <ChevronRight size={13} />)}</button>{!collapsed && expanded[section.name] && <div className="sidebar-items">{section.items.map((item) => { const route = routeFor(section.name, item); const active = (section.name === 'Definitions' && item === 'Workflow' && activePage === 'list') || Boolean(route && activePage === route); return <button className={active ? 'active' : ''} key={`${section.name}-${item}`} onClick={() => section.name === 'Definitions' && item === 'Workflow' ? onOpenWorkflowList() : route && onNavigate(route)}>{item}</button> })}</div>}</div>)}</nav>{!collapsed && <div className="sidebar-footer"><div className="sidebar-user"><span>ÖC</span><div><strong>Özgür celik</strong><small>celikonline@gmail.com</small></div></div><small className="sidebar-version">Orkes Platform Version<br />2.59.7 | v1.8.0</small></div>}{commandOpen && <div className="command-palette-backdrop" onMouseDown={() => setCommandOpen(false)}><section className="command-palette" role="dialog" aria-label="Command palette" onMouseDown={(event) => event.stopPropagation()}><div className="command-search"><Search size={17} /><input autoFocus value={commandQuery} onChange={(event) => setCommandQuery(event.target.value)} placeholder="Search commands..." /></div><div className="command-list">{visibleCommands.length ? visibleCommands.map((command) => <button key={command.name} onClick={() => runCommand(command)}><span><strong>{command.name}</strong><small>{command.detail}</small></span><ChevronRight size={15} /></button>) : <div className="command-empty">No matching commands.</div>}</div><div className="command-footer"><span>Navigate with ↑ ↓</span><kbd>ESC</kbd></div></section></div>}</aside>
 }
 
 function AssistantDock({ open, onToggle, onGenerate, history }: { open: boolean; onToggle: () => void; onGenerate: (prompt: string) => void; history: string[] }) {
