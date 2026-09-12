@@ -256,6 +256,22 @@ test('filters executions by workflow and correlation fields', async ({ page }) =
   await expect(page.getByText('exec_filter_2', { exact: true })).not.toBeVisible()
 })
 
+test('runs supported execution filters in SQL mode', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.clear()
+    window.localStorage.setItem('orkes-executions-v1', JSON.stringify([
+      { executionId: 'exec_sql_1', workflowName: 'api_polling_workflow', version: 1, status: 'COMPLETED', input: {}, events: [], startedAt: '2026-01-01T10:00:00.000Z', correlationId: 'incident-123', tasks: [] },
+      { executionId: 'exec_sql_2', workflowName: 'api_polling_workflow', version: 1, status: 'FAILED', input: {}, events: [], startedAt: '2026-01-01T11:00:00.000Z', correlationId: 'incident-123', tasks: [] },
+    ]))
+  })
+  await page.goto('/executions')
+  await page.getByRole('button', { name: 'SQL format', exact: true }).click()
+  await page.getByLabel('SQL query').fill("SELECT * FROM workflow_executions WHERE status = 'COMPLETED'")
+  await expect(page.getByText('1 result', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'exec_sql_1 exec_sql_1' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'exec_sql_2 exec_sql_2' })).not.toBeVisible()
+})
+
 test('selects executions and exposes bulk controls', async ({ page }) => {
   await page.addInitScript(() => {
     window.localStorage.clear()
