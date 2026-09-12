@@ -213,6 +213,18 @@ test('opens the global command palette with Ctrl+K', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Queue Monitor', exact: true })).toBeVisible()
 })
 
+test('uses advanced execution date filters', async ({ page }) => {
+  await page.addInitScript(() => window.localStorage.clear())
+  await page.goto('/executions')
+  await page.getByRole('button', { name: 'Advanced filters', exact: true }).click()
+  await expect(page.getByLabel('Started after')).toBeVisible()
+  await page.getByLabel('Started after').fill('2026-01-01')
+  await page.getByLabel('Started before').fill('2026-12-31')
+  await page.getByRole('button', { name: 'Clear filters', exact: true }).click()
+  await expect(page.getByLabel('Started after')).toHaveValue('')
+  await expect(page.getByLabel('Started before')).toHaveValue('')
+})
+
 test('imports raw BPMN XML through the conversion review dialog', async ({ page }) => {
   await page.addInitScript(() => window.localStorage.clear())
   await page.goto('/')

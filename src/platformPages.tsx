@@ -35,13 +35,23 @@ function ExecutionsPage() {
   const [records, setRecords] = useState<ExecutionRecord[]>([])
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState('ALL')
+  const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [startedAfter, setStartedAfter] = useState('')
+  const [startedBefore, setStartedBefore] = useState('')
   const [selected, setSelected] = useState<ExecutionRecord | null>(null)
   const refresh = () => { void workflowApi.listExecutions().then(setRecords) }
   useEffect(() => { refresh() }, [])
-  const visible = useMemo(() => records.filter((record) => `${record.executionId} ${record.workflowName} ${record.executionName ?? ''} ${record.correlationId ?? ''}`.toLowerCase().includes(query.toLowerCase()) && (status === 'ALL' || record.status === status)), [query, records, status])
+  const visible = useMemo(() => records.filter((record) => {
+    const matchesText = `${record.executionId} ${record.workflowName} ${record.executionName ?? ''} ${record.correlationId ?? ''}`.toLowerCase().includes(query.toLowerCase())
+    const startedAt = new Date(record.startedAt).getTime()
+    const matchesAfter = !startedAfter || startedAt >= new Date(startedAfter).getTime()
+    const matchesBefore = !startedBefore || startedAt <= new Date(`${startedBefore}T23:59:59`).getTime()
+    return matchesText && (status === 'ALL' || record.status === status) && matchesAfter && matchesBefore
+  }), [query, records, startedAfter, startedBefore, status])
   if (selected) return <ExecutionDetail record={selected} onBack={() => { setSelected(null); refresh() }} />
   return <PageFrame eyebrow="EXECUTIONS / WORKFLOW" title="Workflow Executions" description="Search, inspect and operate workflow execution history." actions={<button className="outline-button" onClick={refresh}><RefreshCw size={15} /> Refresh</button>}>
-    <Toolbar><SearchBox value={query} onChange={setQuery} placeholder="Search execution, workflow or correlation ID..." /><label className="platform-select"><Filter size={15} /><select value={status} onChange={(event) => setStatus(event.target.value)}><option value="ALL">All statuses</option><option>RUNNING</option><option>PAUSED</option><option>COMPLETED</option><option>TERMINATED</option><option>FAILED</option></select></label></Toolbar>
+    <Toolbar><SearchBox value={query} onChange={setQuery} placeholder="Search execution, workflow or correlation ID..." /><label className="platform-select"><Filter size={15} /><select aria-label="Execution status filter" value={status} onChange={(event) => setStatus(event.target.value)}><option value="ALL">All statuses</option><option>RUNNING</option><option>PAUSED</option><option>COMPLETED</option><option>TERMINATED</option><option>FAILED</option></select></label><button className={`outline-button compact-button ${advancedOpen ? 'active-filter' : ''}`} onClick={() => setAdvancedOpen((open) => !open)}><Settings2 size={14} /> Advanced filters</button></Toolbar>
+    {advancedOpen && <div className="execution-filter-panel"><label>Started after<input aria-label="Started after" type="date" value={startedAfter} onChange={(event) => setStartedAfter(event.target.value)} /></label><label>Started before<input aria-label="Started before" type="date" value={startedBefore} onChange={(event) => setStartedBefore(event.target.value)} /></label><button className="outline-button compact-button" onClick={() => { setStartedAfter(''); setStartedBefore(''); setStatus('ALL') }}>Clear filters</button></div>}
     <div className="platform-card"><div className="platform-card-head"><div><strong>Recent executions</strong><span>{visible.length} result{visible.length === 1 ? '' : 's'}</span></div><div className="platform-card-metrics"><span><b>{records.filter((item) => item.status === 'RUNNING').length}</b> running</span><span><b>{records.filter((item) => item.status === 'COMPLETED').length}</b> completed</span></div></div>{visible.length === 0 ? <EmptyState icon={Activity} title="No executions found" detail="Run a workflow from the builder to populate this list." /> : <div className="platform-table"><div className="platform-table-head"><span>Execution</span><span>Workflow</span><span>Status</span><span>Started</span><span>Tasks</span><span /></div>{visible.map((record) => <button className="platform-table-row" key={record.executionId} onClick={() => setSelected(record)}><span><strong>{record.executionName || record.executionId}</strong><small>{record.executionId}</small></span><span>{record.workflowName}<small>Version {record.version}</small></span><span><StatusPill value={record.status} /></span><span>{formatTime(record.startedAt)}</span><span>{record.events.filter((event) => event.status === 'COMPLETED').length}/{record.events.length || '—'}</span><ChevronLeft className="rotate-180" size={15} /></button>)}</div>}</div>
   </PageFrame>
 }
