@@ -36,6 +36,10 @@ button { border: 0; background: none; color: inherit; cursor: pointer; }
 .text-action.danger { color: #ef3340; }
 .text-action.muted { color: #adb7c2; }
 .primary-action { background: #1976d2; color: white !important; border-radius: 6px; padding: 10px 16px; box-shadow: 0 3px 8px rgba(25,118,210,.2); }
+.run-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 18px; }
+.run-actions .primary-action { margin-top: 0; margin-left: auto; }
+.danger-outline-button { border: 1px solid #e5a7ae; color: #c65362; background: #fff7f8; border-radius: 6px; padding: 9px 14px; }
+.danger-outline-button:hover { background: #ffecef; }
 .save-action { background: #1976d2; color: white !important; border-radius: 6px 0 0 6px; padding: 10px 15px; }
 .save-action.is-saved { background: #3aa76d; }
 .save-wrap { position: relative; display: inline-flex; }.save-chevron { margin-left: -18px; background: #1168bd; color: #fff !important; border-radius: 0 6px 6px 0; padding: 10px 8px; }.save-menu { position: absolute; top: 39px; right: 0; width: 155px; padding: 6px; background: #fff; border: 1px solid #dfe7ed; border-radius: 7px; box-shadow: 0 7px 20px rgba(27,52,72,.16); z-index: 20; }.save-menu button { display: block; width: 100%; padding: 8px 7px; color: #557086; font-size: 10px; text-align: left; border-radius: 4px; }.save-menu button:hover { background: #f3f8fc; color: #1976d2; }

@@ -104,3 +104,33 @@ test('undo and redo restore task nodes together with their connections', async (
   await expect(page.locator('.task-node').filter({ hasText: 'http_task' })).toHaveCount(1)
   await expect(page.locator('.canvas-ribbon')).toContainText('13 connections')
 })
+
+test('copies, pastes, and duplicates a node with a conflict-safe reference', async ({ page }) => {
+  await page.addInitScript(() => window.localStorage.clear())
+  await page.goto('/')
+  const source = page.getByTestId('rf__node-submit-job')
+  await source.click()
+  await page.keyboard.press('Control+c')
+  await page.keyboard.press('Control+v')
+  await expect(page.locator('.task-node').filter({ hasText: 'submit_job_2' })).toHaveCount(1)
+
+  await source.click({ button: 'right' })
+  await expect(page.getByRole('button', { name: 'Copy node' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'View JSON' })).toBeVisible()
+  await page.getByRole('button', { name: 'View JSON' }).click()
+  await expect(page.getByRole('button', { name: 'Code', exact: true })).toHaveClass(/active/)
+})
+
+test('pauses, resumes, and terminates a running execution', async ({ page }) => {
+  await page.addInitScript(() => window.localStorage.clear())
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Execute', exact: true }).click()
+  await page.getByRole('button', { name: 'Start execution', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible({ timeout: 2_000 })
+  await page.getByRole('button', { name: 'Pause', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Workflow is paused' })).toBeVisible()
+  await page.getByRole('button', { name: 'Resume', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Terminate', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Terminate', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Execution terminated' })).toBeVisible()
+})

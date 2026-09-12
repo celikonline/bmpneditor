@@ -124,6 +124,7 @@ function svgEscape(value: string) { return value.replace(/[<>&"]/g, (character) 
 
 type ExecutionOptions = { correlationId: string; priority: string; executionName: string; metadata: string; idempotencyKey: string }
 type GraphSnapshot = { nodes: StudioNode[]; edges: Edge[] }
+type RunState = 'idle' | 'running' | 'paused' | 'completed' | 'terminated'
 const graphSnapshot = (nodes: StudioNode[], edges: Edge[]): GraphSnapshot => ({ nodes, edges })
 
 function App() {
@@ -148,7 +149,7 @@ function App() {
   const [future, setFuture] = useState<GraphSnapshot[]>([])
   const [codeText, setCodeText] = useState('')
   const [codeError, setCodeError] = useState<string | null>(null)
-  const [runState, setRunState] = useState<'idle' | 'running' | 'completed'>('idle')
+  const [runState, setRunState] = useState<RunState>('idle')
   const [runtimeNodeId, setRuntimeNodeId] = useState<string | null>(null)
   const [importMessage, setImportMessage] = useState<string | null>(null)
   const [assistantOpen, setAssistantOpen] = useState(false)
@@ -177,6 +178,7 @@ function App() {
   const [runtimeError, setRuntimeError] = useState<string | null>(null)
   const [assistantReview, setAssistantReview] = useState<{ prompt: string; task: typeof taskCatalog[number] } | null>(null)
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<StudioNode> | null>(null)
+  const [clipboardNode, setClipboardNode] = useState<StudioNode | null>(null)
 
   const selectedNode = nodes.find((node) => node.id === selectedId)
   useEffect(() => {
@@ -192,6 +194,51 @@ function App() {
   const ensureDraftVersion = useCallback(() => {
     if (!dirty && currentVersionIsPublished) updateWorkflow({ version: workflow.version + 1 })
   }, [currentVersionIsPublished, dirty, updateWorkflow, workflow.version])
+  const isTypingTarget = () => ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName ?? '')
+  const uniqueReference = (candidate: string, existing: string[]) => {
+    const used = new Set(existing)
+    if (!used.has(candidate)) return candidate
+    let suffix = 2
+    while (used.has(`${candidate}_${suffix}`)) suffix += 1
+    return `${candidate}_${suffix}`
+  }
+  const copyNode = useCallback((nodeId: string) => {
+    const source = nodes.find((node) => node.id === nodeId)
+    if (!source || source.type === 'start' || source.type === 'end') return
+    setClipboardNode(source)
+    setImportMessage(`Copied ${source.data.label}. Press Ctrl/Cmd+V to paste it.`)
+    setContextMenu(null)
+  }, [nodes, setContextMenu])
+  const pasteNode = useCallback(() => {
+    if (!clipboardNode || !can(role, 'workflow:edit')) return
+    ensureDraftVersion()
+    const ref = uniqueReference(clipboardNode.data.ref, nodes.map((node) => node.data.ref))
+    const suffix = ref === clipboardNode.data.ref ? '' : `_${ref.split('_').at(-1)}`
+    const copy: StudioNode = { ...clipboardNode, id: `${clipboardNode.id}-paste-${Date.now()}`, position: { x: clipboardNode.position.x + 72, y: clipboardNode.position.y + 72 }, selected: false, data: { ...clipboardNode.data, label: `${clipboardNode.data.label}${suffix}`, ref, config: clipboardNode.data.config ? structuredClone(clipboardNode.data.config) : undefined } }
+    setHistory((current) => [...current, graphSnapshot(nodes, edges)])
+    setFuture([])
+    setNodes(layoutGraph([...nodes, copy], edges))
+    setSelectedId(copy.id)
+    setDrawerOpen(false)
+    setActiveTab('Task')
+    setImportMessage(`Pasted ${copy.data.label}.`)
+    window.setTimeout(() => flowInstance?.fitView({ padding: 0.18, duration: 260 }), 0)
+  }, [clipboardNode, edges, ensureDraftVersion, flowInstance, nodes, role, setActiveTab, setContextMenu, setDrawerOpen, setImportMessage, setNodes, setSelectedId])
+  const duplicateNodeShortcut = useCallback((nodeId: string) => {
+    const source = nodes.find((node) => node.id === nodeId)
+    if (!source || source.type === 'start' || source.type === 'end' || !can(role, 'workflow:edit')) return
+    ensureDraftVersion()
+    const ref = uniqueReference(source.data.ref, nodes.map((node) => node.data.ref))
+    const suffix = ref === source.data.ref ? '_copy' : `_${ref.split('_').at(-1)}`
+    const copy: StudioNode = { ...source, id: `${source.id}-copy-${Date.now()}`, position: { x: source.position.x + 55, y: source.position.y + 55 }, selected: false, data: { ...source.data, label: `${source.data.label}${suffix}`, ref, config: source.data.config ? structuredClone(source.data.config) : undefined } }
+    setHistory((current) => [...current, graphSnapshot(nodes, edges)])
+    setFuture([])
+    const nextEdges = [...edges, edge(`duplicate-${Date.now()}`, source.id, copy.id)]
+    setNodes(layoutGraph([...nodes, copy], nextEdges))
+    setEdges(nextEdges)
+    setSelectedId(copy.id)
+    setImportMessage(`Duplicated ${source.data.label}.`)
+  }, [edges, ensureDraftVersion, nodes, role, setEdges, setImportMessage, setNodes, setSelectedId])
   const deleteNode = useCallback((nodeId: string) => {
     if (!can(role, 'workflow:edit')) { setImportMessage('Your role is read-only and cannot delete nodes.'); return }
     if (!nodes.some((node) => node.id === nodeId)) return
@@ -342,7 +389,8 @@ function App() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+      const modifier = event.ctrlKey || event.metaKey
+      if (modifier && event.key.toLowerCase() === 's') {
         event.preventDefault()
         markSaved()
         setLastSavedJson(workflowJson)
@@ -350,23 +398,45 @@ function App() {
         setSaved(true)
         window.setTimeout(() => setSaved(false), 1800)
       }
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
+      if (modifier && event.key.toLowerCase() === 'z') {
         event.preventDefault()
         undo()
       }
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'y') {
+      if (modifier && event.key.toLowerCase() === 'y') {
         event.preventDefault()
         redo()
       }
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+      if (modifier && event.key.toLowerCase() === 'c' && selectedId && !isTypingTarget()) {
+        event.preventDefault()
+        copyNode(selectedId)
+      }
+      if (modifier && event.key.toLowerCase() === 'v' && !isTypingTarget()) {
+        event.preventDefault()
+        pasteNode()
+      }
+      if (modifier && event.key.toLowerCase() === 'd' && selectedId && !isTypingTarget()) {
+        event.preventDefault()
+        duplicateNodeShortcut(selectedId)
+      }
+      if (modifier && event.key === '0' && !isTypingTarget()) {
+        event.preventDefault()
+        flowInstance?.fitView({ padding: 0.18, duration: 260 })
+      }
+      if (modifier && (event.key.toLowerCase() === 'k' || event.key.toLowerCase() === 'f') && !isTypingTarget()) {
         event.preventDefault()
         setCanvasSearchOpen(true)
+      }
+      if (event.key === 'Escape') {
+        setContextMenu(null)
+        setQuickAddOpen(false)
+        setCanvasSearchOpen(false)
+        setValidationOpen(false)
       }
       if (event.key === 'Delete' && selectedId && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') deleteSelected()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  })
+  }, [copyNode, deleteSelected, duplicateNodeShortcut, flowInstance, pasteNode, redo, selectedId, undo])
 
   const updateSelectedNode = (patch: Partial<StudioNode['data']>) => {
     if (!can(role, 'workflow:edit')) { setImportMessage('Your role is read-only and cannot edit task configuration.'); return }
@@ -444,6 +514,21 @@ function App() {
       setRuntimeError(error instanceof Error ? error.message : 'Execution could not be started.')
       setImportMessage(error instanceof Error ? error.message : 'Execution could not be started.')
     })
+  }
+
+  const pauseExecution = () => {
+    if (!lastExecution) return
+    void workflowApi.pauseExecution(lastExecution.executionId).then(() => setRunState('paused')).catch((error: unknown) => setRuntimeError(error instanceof Error ? error.message : 'Execution could not be paused.'))
+  }
+
+  const resumeExecution = () => {
+    if (!lastExecution) return
+    void workflowApi.resumeExecution(lastExecution.executionId).then(() => setRunState('running')).catch((error: unknown) => setRuntimeError(error instanceof Error ? error.message : 'Execution could not be resumed.'))
+  }
+
+  const terminateExecution = () => {
+    if (!lastExecution) return
+    void workflowApi.terminateExecution(lastExecution.executionId).then(() => { setRunState('terminated'); setRuntimeNodeId(null); setImportMessage('Execution terminated.') }).catch((error: unknown) => setRuntimeError(error instanceof Error ? error.message : 'Execution could not be terminated.'))
   }
 
   const downloadWorkflow = () => {
@@ -682,7 +767,7 @@ function App() {
             <Controls showInteractive={false} position="bottom-left" />
             <MiniMap position="bottom-right" pannable zoomable nodeColor={(node) => node.type === 'start' || node.type === 'end' ? '#d7f1f4' : '#cbdff1'} maskColor="rgba(255,255,255,.68)" />
           </ReactFlow>
-          {contextMenu && <NodeContextMenu x={contextMenu.x} y={contextMenu.y} onDuplicate={() => duplicateNode(contextMenu.nodeId)} onDelete={deleteSelected} onClose={() => setContextMenu(null)} />}
+          {contextMenu && <NodeContextMenu x={contextMenu.x} y={contextMenu.y} onCopy={() => copyNode(contextMenu.nodeId)} onDuplicate={() => duplicateNode(contextMenu.nodeId)} onTest={() => { void testSelectedTask(); setContextMenu(null) }} onViewJson={() => { setActiveTab('Code'); setContextMenu(null) }} onDelete={deleteSelected} onClose={() => setContextMenu(null)} />}
           <button className="floating-quick-add" onClick={() => setQuickAddOpen((open) => !open)}><Plus size={16} /> Add task</button>
           {quickAddOpen && <PortedQuickAddMenu tasks={catalogItems} onAdd={addTask} onMore={() => { setQuickAddOpen(false); setDrawerOpen(true) }} />}
 <AssistantDock open={assistantOpen} onToggle={() => setAssistantOpen((open) => !open)} onGenerate={generateAssistantDraft} history={assistantHistory} />
@@ -693,7 +778,7 @@ function App() {
         </section>
 
         {drawerOpen && <PortedAddTaskDrawer query={query} setQuery={setQuery} tasks={catalogItems} loading={catalogLoading} error={catalogError} onRetry={() => { setCatalogError(null); setCatalogLoading(true); void workflowApi.getTaskCatalog().then((items) => setCatalogItems(items)).catch((error: unknown) => setCatalogError(error instanceof Error ? error.message : 'Task catalog could not be loaded.')).finally(() => setCatalogLoading(false)) }} onClose={() => setDrawerOpen(false)} onAdd={addTask} />}
-{!drawerOpen && <Inspector activeTab={activeTab} setActiveTab={setActiveTab} selectedNode={selectedNode} onDelete={deleteSelected} onOpenTasks={() => setDrawerOpen(true)} onUpdateNode={updateSelectedNode} codeText={codeText} setCodeText={setCodeText} applyJson={applyJson} codeError={codeError} workflow={workflow} updateWorkflow={updateWorkflowWithRole} validation={validation} runState={runState} onRun={runWorkflow} onImportBpmn={importBpmn} onExportBpmn={downloadBpmn} onExportConductor={() => downloadConductor(nodes, workflow.name)} lastSavedJson={lastSavedJson} versionHistory={versionHistory} importMessage={importMessage} testResult={testResult} onTest={testSelectedTask} executionEvents={executionEvents} executionInput={executionInput} lastExecution={lastExecution} realtimeEvent={lastRealtimeEvent} nodes={nodes} />}
+ {!drawerOpen && <Inspector activeTab={activeTab} setActiveTab={setActiveTab} selectedNode={selectedNode} onDelete={deleteSelected} onOpenTasks={() => setDrawerOpen(true)} onUpdateNode={updateSelectedNode} codeText={codeText} setCodeText={setCodeText} applyJson={applyJson} codeError={codeError} workflow={workflow} updateWorkflow={updateWorkflowWithRole} validation={validation} runState={runState} onRun={runWorkflow} onPause={pauseExecution} onResume={resumeExecution} onTerminate={terminateExecution} onImportBpmn={importBpmn} onExportBpmn={downloadBpmn} onExportConductor={() => downloadConductor(nodes, workflow.name)} lastSavedJson={lastSavedJson} versionHistory={versionHistory} importMessage={importMessage} testResult={testResult} onTest={testSelectedTask} executionEvents={executionEvents} executionInput={executionInput} lastExecution={lastExecution} realtimeEvent={lastRealtimeEvent} nodes={nodes} />}
       </main>
 
       <footer className={`statusbar ${validation.length ? 'has-validation' : ''}`}><button className="validation-status" onClick={() => setValidationOpen((open) => !open)}><Check size={14} /> <strong>{validation.length ? `${validation.length} validation ${validation.length === 1 ? 'issue' : 'issues'} found.` : '0 warnings found.'}</strong></button><div className="status-actions"><button onClick={undo} disabled={!history.length}><Undo2 size={14} /> Undo</button><button onClick={redo} disabled={!future.length}><Redo2 size={14} /> Redo</button><span>{savedAt ? `Saved ${new Date(savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Not saved yet'}</span></div></footer>
@@ -745,17 +830,17 @@ function CanvasSearch({ nodes, onClose, onSelect }: { nodes: StudioNode[]; onClo
   return <div className="canvas-search"><div className="canvas-search-input"><Search size={15} /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search nodes..." /><button onClick={onClose}><X size={14} /></button></div><div className="canvas-search-results">{matches.slice(0, 8).map((node) => <button key={node.id} onClick={() => onSelect(node.id)}><span className="search-node-kind">{node.data.kind}</span><span><strong>{node.data.label}</strong><small>{node.data.ref}</small></span><ChevronRight size={13} /></button>)}{matches.length === 0 && <div className="search-empty">No nodes found.</div>}</div></div>
 }
 
-function NodeContextMenu({ x, y, onDuplicate, onDelete, onClose }: { x: number; y: number; onDuplicate: () => void; onDelete: () => void; onClose: () => void }) {
-  return <div className="node-context-menu" style={{ left: x, top: y }} onClick={(event) => event.stopPropagation()}><button onClick={onDuplicate}><Copy size={14} /> Duplicate node</button><button onClick={onClose}><Settings2 size={14} /> Open inspector</button><button className="danger-menu-item" onClick={() => { onDelete(); onClose() }}><Trash2 size={14} /> Delete node</button></div>
+function NodeContextMenu({ x, y, onCopy, onDuplicate, onTest, onViewJson, onDelete, onClose }: { x: number; y: number; onCopy: () => void; onDuplicate: () => void; onTest: () => void; onViewJson: () => void; onDelete: () => void; onClose: () => void }) {
+  return <div className="node-context-menu" style={{ left: x, top: y }} onClick={(event) => event.stopPropagation()}><button onClick={onClose}><Settings2 size={14} /> Open inspector</button><button onClick={() => { onCopy(); onClose() }}><Copy size={14} /> Copy node</button><button onClick={() => { onDuplicate(); onClose() }}><Copy size={14} /> Duplicate node</button><button onClick={onTest}><Zap size={14} /> Test task</button><button onClick={onViewJson}><Code2 size={14} /> View JSON</button><button className="danger-menu-item" onClick={() => { onDelete(); onClose() }}><Trash2 size={14} /> Delete node</button></div>
 }
 
 function ImportReviewModal({ review, name, onCancel, onApply }: { review: ImportReview; name: string; onCancel: () => void; onApply: () => void }) {
   return <div className="modal-backdrop"><section className="import-review-modal"><div className="modal-head"><div><span className="eyebrow">BPMN CONVERSION REVIEW</span><h2>Review imported workflow</h2><p>{name}.bpmn will be converted to the canonical workflow graph.</p></div><button onClick={onCancel}><X size={17} /></button></div><div className="review-stats"><div><strong>{review.nodes.length}</strong><span>Supported elements</span></div><div><strong>{review.edges.length}</strong><span>Connections</span></div><div><strong>{review.warnings.length}</strong><span>Warnings</span></div><div><strong>{review.errors.length}</strong><span>Errors</span></div></div>{review.errors.length > 0 && <div className="review-message error"><strong>Conversion blocked</strong><span>{review.errors.join(' ')}</span></div>}{review.warnings.length > 0 && <div className="review-message warning"><strong>Review required</strong><span>{review.warnings.join(' ')}</span></div>}<div className="review-mapping"><span>Mapping preview</span><div><code>startEvent</code><ChevronRight size={13} /><code>Start</code></div><div><code>serviceTask / userTask</code><ChevronRight size={13} /><code>Task / HTTP or Human</code></div><div><code>exclusiveGateway</code><ChevronRight size={13} /><code>Switch + labeled routes</code></div><div><code>sequenceFlow</code><ChevronRight size={13} /><code>{review.edges.length} graph connections</code></div></div><div className="modal-actions"><button className="outline-button" onClick={onCancel}>Cancel</button><button className="primary-action" disabled={review.errors.length > 0} onClick={onApply}><Check size={14} /> Apply conversion</button></div></section></div>
 }
 
-function Inspector({ activeTab, setActiveTab, selectedNode, onDelete, onOpenTasks, onUpdateNode, codeText, setCodeText, applyJson, codeError, workflow, updateWorkflow, validation, runState, onRun, onImportBpmn, onExportBpmn, onExportConductor, lastSavedJson, versionHistory, importMessage, testResult, onTest, executionEvents, executionInput, lastExecution, realtimeEvent, nodes }: { activeTab: string; setActiveTab: (v: string) => void; selectedNode?: StudioNode; onDelete: () => void; onOpenTasks: () => void; onUpdateNode: (patch: Partial<StudioNode['data']>) => void; codeText: string; setCodeText: (v: string) => void; applyJson: () => void; codeError: string | null; workflow: WorkflowSettings; updateWorkflow: (patch: Partial<WorkflowSettings>) => void; validation: Array<{ severity: 'error' | 'warning'; message: string; nodeId?: string }>; runState: 'idle' | 'running' | 'completed'; onRun: () => void; onImportBpmn: (file?: File) => void; onExportBpmn: () => void; onExportConductor: () => void; lastSavedJson: string; versionHistory: WorkflowVersionSnapshot[]; importMessage: string | null; testResult: string | null; onTest: () => void; executionEvents: Array<{ id: string; label: string; status: TaskExecutionStatus }>; executionInput: string; lastExecution: ExecutionRecord | null; realtimeEvent: RealtimeExecutionEvent['type'] | null; nodes: StudioNode[] }) {
+function Inspector({ activeTab, setActiveTab, selectedNode, onDelete, onOpenTasks, onUpdateNode, codeText, setCodeText, applyJson, codeError, workflow, updateWorkflow, validation, runState, onRun, onPause, onResume, onTerminate, onImportBpmn, onExportBpmn, onExportConductor, lastSavedJson, versionHistory, importMessage, testResult, onTest, executionEvents, executionInput, lastExecution, realtimeEvent, nodes }: { activeTab: string; setActiveTab: (v: string) => void; selectedNode?: StudioNode; onDelete: () => void; onOpenTasks: () => void; onUpdateNode: (patch: Partial<StudioNode['data']>) => void; codeText: string; setCodeText: (v: string) => void; applyJson: () => void; codeError: string | null; workflow: WorkflowSettings; updateWorkflow: (patch: Partial<WorkflowSettings>) => void; validation: Array<{ severity: 'error' | 'warning'; message: string; nodeId?: string }>; runState: RunState; onRun: () => void; onPause: () => void; onResume: () => void; onTerminate: () => void; onImportBpmn: (file?: File) => void; onExportBpmn: () => void; onExportConductor: () => void; lastSavedJson: string; versionHistory: WorkflowVersionSnapshot[]; importMessage: string | null; testResult: string | null; onTest: () => void; executionEvents: Array<{ id: string; label: string; status: TaskExecutionStatus }>; executionInput: string; lastExecution: ExecutionRecord | null; realtimeEvent: RealtimeExecutionEvent['type'] | null; nodes: StudioNode[] }) {
   const tabs = [['Workflow', Workflow], ['Task', Zap], ['Code', Code2], ['Run', Play], ['Dependencies', Layers3]] as const
-  return <aside className="right-panel inspector"><div className="inspector-tabs">{tabs.map(([label, Icon]) => <button key={label} className={activeTab === label ? 'active' : ''} onClick={() => setActiveTab(label)}><Icon size={15} />{label}</button>)}</div>{activeTab === 'Task' && selectedNode ? <TaskEditor node={selectedNode} validation={validation} onDelete={onDelete} onOpenTasks={onOpenTasks} onUpdate={onUpdateNode} onTest={onTest} testResult={testResult} /> : <PanelContent tab={activeTab} onOpenTasks={onOpenTasks} codeText={codeText} setCodeText={setCodeText} applyJson={applyJson} codeError={codeError} workflow={workflow} updateWorkflow={updateWorkflow} validation={validation} runState={runState} onRun={onRun} onImportBpmn={onImportBpmn} onExportBpmn={onExportBpmn} onExportConductor={onExportConductor} lastSavedJson={lastSavedJson} versionHistory={versionHistory} importMessage={importMessage} executionEvents={executionEvents} executionInput={executionInput} lastExecution={lastExecution} realtimeEvent={realtimeEvent} nodes={nodes} />}</aside>
+  return <aside className="right-panel inspector"><div className="inspector-tabs">{tabs.map(([label, Icon]) => <button key={label} className={activeTab === label ? 'active' : ''} onClick={() => setActiveTab(label)}><Icon size={15} />{label}</button>)}</div>{activeTab === 'Task' && selectedNode ? <TaskEditor node={selectedNode} validation={validation} onDelete={onDelete} onOpenTasks={onOpenTasks} onUpdate={onUpdateNode} onTest={onTest} testResult={testResult} /> : <PanelContent tab={activeTab} onOpenTasks={onOpenTasks} codeText={codeText} setCodeText={setCodeText} applyJson={applyJson} codeError={codeError} workflow={workflow} updateWorkflow={updateWorkflow} validation={validation} runState={runState} onRun={onRun} onPause={onPause} onResume={onResume} onTerminate={onTerminate} onImportBpmn={onImportBpmn} onExportBpmn={onExportBpmn} onExportConductor={onExportConductor} lastSavedJson={lastSavedJson} versionHistory={versionHistory} importMessage={importMessage} executionEvents={executionEvents} executionInput={executionInput} lastExecution={lastExecution} realtimeEvent={realtimeEvent} nodes={nodes} />}</aside>
 }
 
 const expressionSuggestions = ['${workflow.input.jobId}', '${workflow.output.finalStatus}', '${workflow.variables.status}', '${workflow.status}', '${workflow.id}', '${task_ref.input.request}', '${task_ref.output.response.body.status}', '${previous_ref.output.result}', '${workflow.secrets.HTTP_API_TOKEN}', '${workflow.env.API_BASE_URL}']
@@ -821,7 +906,7 @@ function HttpFields({ config, updateConfig }: { config: NonNullable<StudioNode['
   return <><label>HTTP method</label><div className="form-select">{config.method ?? 'GET'}<ChevronDown size={14} /></div><label>Request URL</label><ExpressionInput value={config.url ?? ''} placeholder="https://api.example.com/status" onChange={(value) => updateConfig({ url: value })} /><label>Headers</label><textarea value={config.headers ?? ''} placeholder={'{\n  "content-type": "application/json"\n}'} onChange={(event) => updateConfig({ headers: event.target.value })} /><label>Request body</label><textarea value={config.body ?? ''} placeholder="Optional JSON body" onChange={(event) => updateConfig({ body: event.target.value })} /><label>Input parameters</label><textarea value={config.inputParameters ?? ''} placeholder={'{\n  "id": "${workflow.input.id}"\n}'} onChange={(event) => updateConfig({ inputParameters: event.target.value })} /></>
 }
 
-function RunPanel({ runState, workflow, executionEvents, executionInput, lastExecution, realtimeEvent, onRun }: { runState: 'idle' | 'running' | 'completed'; workflow: { version: number; name: string }; executionEvents: Array<{ id: string; label: string; status: TaskExecutionStatus }>; executionInput: string; lastExecution: ExecutionRecord | null; realtimeEvent: RealtimeExecutionEvent['type'] | null; onRun: () => void }) {
+function RunPanel({ runState, workflow, executionEvents, executionInput, lastExecution, realtimeEvent, onRun, onPause, onResume, onTerminate }: { runState: RunState; workflow: { version: number; name: string }; executionEvents: Array<{ id: string; label: string; status: TaskExecutionStatus }>; executionInput: string; lastExecution: ExecutionRecord | null; realtimeEvent: RealtimeExecutionEvent['type'] | null; onRun: () => void; onPause: () => void; onResume: () => void; onTerminate: () => void }) {
   const [view, setView] = useState<'Summary' | 'Task List' | 'Timeline' | 'Input' | 'Output' | 'JSON'>('Summary')
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null)
   const completed = executionEvents.filter((event) => event.status === 'COMPLETED').length
@@ -830,7 +915,7 @@ function RunPanel({ runState, workflow, executionEvents, executionInput, lastExe
   const parsedInput = (() => { try { return JSON.parse(executionInput) } catch { return {} } })()
   const output = lastExecution ? { status: lastExecution.status.toLowerCase(), tasksCompleted: lastExecution.events.filter((event) => event.status === 'COMPLETED').length, reasonForIncompletion: null } : { status: 'not_started' }
   const selectedEvent = executionEvents.find((event) => event.id === selectedEventId)
-  return <div className="run-panel"><div className="run-header"><div className={`run-icon ${runState}`}><Play size={20} fill="currentColor" /></div><div><h2>{runState === 'running' ? 'Workflow is running' : runState === 'completed' ? 'Execution completed' : 'Run workflow'}</h2><span className="run-subtitle">{workflow.name} · version {workflow.version}</span>{realtimeEvent && <small className="realtime-indicator">Realtime · {realtimeEvent}</small>}</div></div><div className="run-view-tabs">{tabs.map((tab) => <button key={tab} className={view === tab ? 'active' : ''} onClick={() => setView(tab)}>{tab}</button>)}</div>{view === 'Summary' && <><p>{runState === 'completed' ? 'The mock execution completed successfully. Review task timing and output below.' : 'Execute the current draft with test input and inspect every task on the canvas.'}</p><div className="run-summary"><div><span>Status</span><strong className={runState}>{runState === 'idle' ? 'READY' : runState.toUpperCase()}</strong></div><div><span>Version</span><strong>{workflow.version}</strong></div><div><span>Tasks</span><strong>{taskCount}</strong></div></div><div className="summary-grid"><div><span>Execution ID</span><strong>{lastExecution?.executionId ?? '—'}</strong></div><div><span>Started by</span><strong>Workflow Studio</strong></div><div><span>Duration</span><strong>{runState === 'completed' ? '2.34s' : '—'}</strong></div><div><span>Worker ID</span><strong>studio-mock-worker</strong></div></div></>}{view === 'Task List' && <div className="execution-timeline task-list-view">{executionEvents.map((event) => <button className={`timeline-row ${event.status.toLowerCase()} ${selectedEventId === event.id ? 'selected' : ''}`} key={event.id} onClick={() => setSelectedEventId(event.id)}><span className="timeline-dot" /><span>{event.label}</span><small>{event.status}</small><ChevronRight size={13} /></button>)}{selectedEvent && <ExecutionTaskDetails event={selectedEvent} />}</div>}{view === 'Timeline' && <div className="execution-timeline"><div className="timeline-title"><span>Execution timeline</span><small>{completed}/{taskCount} completed</small></div>{(executionEvents.length ? executionEvents : [{ id: 'empty', label: 'Run the workflow to populate the timeline', status: 'SCHEDULED' as const }]).map((event) => <div className={`timeline-row ${event.status.toLowerCase()}`} key={event.id}><span className="timeline-dot" /><span>{event.label}</span><small>{event.status}</small></div>)}</div>}{view === 'Input' && <CodeBlock value={JSON.stringify(lastExecution?.input ?? parsedInput, null, 2)} />}{view === 'Output' && <CodeBlock value={JSON.stringify(output, null, 2)} />}{view === 'JSON' && <CodeBlock value={JSON.stringify({ executionId: lastExecution?.executionId ?? null, status: lastExecution?.status ?? (runState === 'idle' ? 'READY' : runState.toUpperCase()), workflowVersion: workflow.version, events: lastExecution?.events ?? [] }, null, 2)} />}{view !== 'Task List' && <button className="primary-action wide" disabled={runState === 'running'} onClick={onRun}><Play size={15} fill="currentColor" /> {runState === 'running' ? 'Executing…' : 'Execute draft'}</button>}</div>
+  return <div className="run-panel"><div className="run-header"><div className={`run-icon ${runState}`}><Play size={20} fill="currentColor" /></div><div><h2>{runState === 'running' ? 'Workflow is running' : runState === 'paused' ? 'Workflow is paused' : runState === 'completed' ? 'Execution completed' : runState === 'terminated' ? 'Execution terminated' : 'Run workflow'}</h2><span className="run-subtitle">{workflow.name} · version {workflow.version}</span>{realtimeEvent && <small className="realtime-indicator">Realtime · {realtimeEvent}</small>}</div></div><div className="run-view-tabs">{tabs.map((tab) => <button key={tab} className={view === tab ? 'active' : ''} onClick={() => setView(tab)}>{tab}</button>)}</div>{view === 'Summary' && <><p>{runState === 'completed' ? 'The mock execution completed successfully. Review task timing and output below.' : runState === 'paused' ? 'Execution is paused. Resume it to continue processing scheduled tasks.' : runState === 'terminated' ? 'Execution was terminated by an operator.' : 'Execute the current draft with test input and inspect every task on the canvas.'}</p><div className="run-summary"><div><span>Status</span><strong className={runState}>{runState === 'idle' ? 'READY' : runState.toUpperCase()}</strong></div><div><span>Version</span><strong>{workflow.version}</strong></div><div><span>Tasks</span><strong>{taskCount}</strong></div></div><div className="summary-grid"><div><span>Execution ID</span><strong>{lastExecution?.executionId ?? '—'}</strong></div><div><span>Started by</span><strong>Workflow Studio</strong></div><div><span>Duration</span><strong>{runState === 'completed' ? '2.34s' : '—'}</strong></div><div><span>Worker ID</span><strong>studio-mock-worker</strong></div></div></>}{view === 'Task List' && <div className="execution-timeline task-list-view">{executionEvents.map((event) => <button className={`timeline-row ${event.status.toLowerCase()} ${selectedEventId === event.id ? 'selected' : ''}`} key={event.id} onClick={() => setSelectedEventId(event.id)}><span className="timeline-dot" /><span>{event.label}</span><small>{event.status}</small><ChevronRight size={13} /></button>)}{selectedEvent && <ExecutionTaskDetails event={selectedEvent} />}</div>}{view === 'Timeline' && <div className="execution-timeline"><div className="timeline-title"><span>Execution timeline</span><small>{completed}/{taskCount} completed</small></div>{(executionEvents.length ? executionEvents : [{ id: 'empty', label: 'Run the workflow to populate the timeline', status: 'SCHEDULED' as const }]).map((event) => <div className={`timeline-row ${event.status.toLowerCase()}`} key={event.id}><span className="timeline-dot" /><span>{event.label}</span><small>{event.status}</small></div>)}</div>}{view === 'Input' && <CodeBlock value={JSON.stringify(lastExecution?.input ?? parsedInput, null, 2)} />}{view === 'Output' && <CodeBlock value={JSON.stringify(output, null, 2)} />}{view === 'JSON' && <CodeBlock value={JSON.stringify({ executionId: lastExecution?.executionId ?? null, status: lastExecution?.status ?? (runState === 'idle' ? 'READY' : runState.toUpperCase()), workflowVersion: workflow.version, events: lastExecution?.events ?? [] }, null, 2)} />}{view !== 'Task List' && <div className="run-actions">{runState === 'running' && <button className="outline-button" onClick={onPause}>Pause</button>}{runState === 'paused' && <button className="outline-button" onClick={onResume}>Resume</button>}{(runState === 'running' || runState === 'paused') && <button className="danger-outline-button" onClick={onTerminate}>Terminate</button>}<button className="primary-action" disabled={runState === 'running' || runState === 'paused'} onClick={onRun}><Play size={15} fill="currentColor" /> {runState === 'running' ? 'Executing…' : 'Execute draft'}</button></div>}</div>
 }
 
 function ExecutionTaskDetails({ event }: { event: { label: string; status: TaskExecutionStatus } }) {
@@ -896,7 +981,7 @@ function WorkflowAccordion({ title, open, onToggle, children }: { title: string;
 
 function ParameterEditor({ title, items, onChange }: { title: string; items: WorkflowParameter[]; onChange: (items: WorkflowParameter[]) => void }) { const setItem = (index: number, patch: Partial<WorkflowParameter>) => onChange(items.map((item, current) => current === index ? { ...item, ...patch } : item)); return <div className="parameter-editor"><div className="section-caption">{title}</div>{items.map((item, index) => <div className="parameter-row" key={`${title}-${index}`}><div><label>Key</label><input aria-label={`${title} key ${index + 1}`} value={item.key} placeholder="Parameter" onChange={(event) => setItem(index, { key: event.target.value })} /></div><div><label>Value</label><input aria-label={`${title} value ${index + 1}`} value={item.value} placeholder="${task_ref.output.result}" onChange={(event) => setItem(index, { value: event.target.value })} /></div><button aria-label={`Remove ${title} ${index + 1}`} onClick={() => onChange(items.filter((_, current) => current !== index))}>×</button></div>)}<button className="add-parameter" onClick={() => onChange([...items, { key: '', value: '' }])}><Plus size={14} /> Add parameter</button></div> }
 
-function PanelContent({ tab, onOpenTasks, codeText, setCodeText, applyJson, codeError, workflow, updateWorkflow, validation, runState, onRun, onImportBpmn, onExportBpmn, onExportConductor, lastSavedJson, versionHistory, importMessage, executionEvents, executionInput, lastExecution, realtimeEvent, nodes }: { tab: string; onOpenTasks: () => void; codeText: string; setCodeText: (v: string) => void; applyJson: () => void; codeError: string | null; workflow: WorkflowSettings; updateWorkflow: (patch: Partial<WorkflowSettings>) => void; validation: Array<{ severity: 'error' | 'warning'; message: string; nodeId?: string }>; runState: 'idle' | 'running' | 'completed'; onRun: () => void; onImportBpmn: (file?: File) => void; onExportBpmn: () => void; onExportConductor: () => void; lastSavedJson: string; versionHistory: WorkflowVersionSnapshot[]; importMessage: string | null; executionEvents: Array<{ id: string; label: string; status: TaskExecutionStatus }>; executionInput: string; lastExecution: ExecutionRecord | null; realtimeEvent: RealtimeExecutionEvent['type'] | null; nodes: StudioNode[] }) {
+function PanelContent({ tab, onOpenTasks, codeText, setCodeText, applyJson, codeError, workflow, updateWorkflow, validation, runState, onRun, onPause, onResume, onTerminate, onImportBpmn, onExportBpmn, onExportConductor, lastSavedJson, versionHistory, importMessage, executionEvents, executionInput, lastExecution, realtimeEvent, nodes }: { tab: string; onOpenTasks: () => void; codeText: string; setCodeText: (v: string) => void; applyJson: () => void; codeError: string | null; workflow: WorkflowSettings; updateWorkflow: (patch: Partial<WorkflowSettings>) => void; validation: Array<{ severity: 'error' | 'warning'; message: string; nodeId?: string }>; runState: RunState; onRun: () => void; onPause: () => void; onResume: () => void; onTerminate: () => void; onImportBpmn: (file?: File) => void; onExportBpmn: () => void; onExportConductor: () => void; lastSavedJson: string; versionHistory: WorkflowVersionSnapshot[]; importMessage: string | null; executionEvents: Array<{ id: string; label: string; status: TaskExecutionStatus }>; executionInput: string; lastExecution: ExecutionRecord | null; realtimeEvent: RealtimeExecutionEvent['type'] | null; nodes: StudioNode[] }) {
   const [showDiff, setShowDiff] = useState(false)
   const [compareVersion, setCompareVersion] = useState('')
   const selectedSnapshot = versionHistory.find((snapshot) => `${snapshot.version}-${snapshot.status}` === compareVersion)
@@ -904,7 +989,7 @@ function PanelContent({ tab, onOpenTasks, codeText, setCodeText, applyJson, code
   const formatCode = () => { try { setCodeText(JSON.stringify(JSON.parse(codeText), null, 2)) } catch { /* Keep invalid source visible for Monaco diagnostics. */ } }
   if (tab === 'Code') return <div className="code-panel"><div className="code-top"><span>{showDiff ? 'Draft diff' : 'workflow.json'} · {validation.length ? `${validation.length} issues` : 'valid'}</span><div className="code-top-actions">{versionHistory.length > 0 && <select className="compare-select" aria-label="Compare with version" value={compareVersion} onChange={(event) => { setCompareVersion(event.target.value); setShowDiff(Boolean(event.target.value)) }}><option value="">Saved baseline</option>{versionHistory.slice().reverse().map((snapshot) => <option value={`${snapshot.version}-${snapshot.status}`} key={`${snapshot.version}-${snapshot.status}`}>v{snapshot.version} · {snapshot.status.toLowerCase()}</option>)}</select>}<button onClick={formatCode}>Format</button><button onClick={() => setShowDiff((open) => !open)}>{showDiff ? 'Editor' : 'Diff'}</button><button onClick={() => navigator.clipboard?.writeText(codeText)}><Copy size={15} /></button></div></div>{showDiff ? <DiffViewer baseline={compareBaseline} current={codeText} /> : <Suspense fallback={<div className="code-loading">Loading Monaco editor…</div>}><MonacoEditor height="425px" language="json" theme="vs" value={codeText} onChange={(value) => setCodeText(value ?? '')} options={{ minimap: { enabled: true }, fontSize: 11, lineNumbers: 'on', wordWrap: 'on', scrollBeyondLastLine: false, automaticLayout: true }} /></Suspense>}{codeError && <div className="code-error">{codeError}</div>}{showDiff && <div className="diff-caption">Comparing current draft against {selectedSnapshot ? `version ${selectedSnapshot.version} ${selectedSnapshot.status.toLowerCase()}` : 'the last saved baseline'}.</div>}<div className="code-actions"><button className="outline-button" onClick={applyJson}><Check size={14} /> Apply JSON</button><button className="outline-button" onClick={onExportConductor}><Download size={14} /> Conductor JSON</button></div></div>
   if (tab === 'Dependencies') return <DependenciesPanel nodes={nodes} workflow={workflow} />
-  if (tab === 'Run') return <RunPanel runState={runState} workflow={workflow} executionEvents={executionEvents} executionInput={executionInput} lastExecution={lastExecution} realtimeEvent={realtimeEvent} onRun={onRun} />
+  if (tab === 'Run') return <RunPanel runState={runState} workflow={workflow} executionEvents={executionEvents} executionInput={executionInput} lastExecution={lastExecution} realtimeEvent={realtimeEvent} onRun={onRun} onPause={onPause} onResume={onResume} onTerminate={onTerminate} />
   if (tab === 'Workflow') return <WorkflowSettingsPanel workflow={workflow} updateWorkflow={updateWorkflow} validation={validation} onOpenTasks={onOpenTasks} onImportBpmn={onImportBpmn} onExportBpmn={onExportBpmn} onExportConductor={onExportConductor} importMessage={importMessage} />
 return <div className="workflow-panel"><div className="workflow-avatar"><Workflow size={20} /></div><h2>Workflow settings</h2><p>Configure workflow inputs, schema enforcement and version metadata.</p><label>Workflow name</label><input value={workflow.name} onChange={(event) => updateWorkflow({ name: event.target.value })} /><label>Description</label><textarea value={workflow.description} onChange={(event) => updateWorkflow({ description: event.target.value })} /><label>Input schema</label><textarea value={workflow.inputSchema ?? ''} placeholder='JSON Schema for workflow.input' onChange={(event) => updateWorkflow({ inputSchema: event.target.value })} /><label>Output schema</label><textarea value={workflow.outputSchema ?? ''} placeholder='JSON Schema for workflow.output' onChange={(event) => updateWorkflow({ outputSchema: event.target.value })} /><div className="form-toggle"><input type="checkbox" checked={workflow.enforceSchema} onChange={(event) => updateWorkflow({ enforceSchema: event.target.checked })} /><span>Enforce input/output schema</span></div><div className="compact-fields"><div><label>Workflow timeout (sec)</label><input type="number" value={workflow.timeoutSeconds} onChange={(event) => updateWorkflow({ timeoutSeconds: Number(event.target.value) })} /></div><div><label>Idempotency</label><select className="native-select" value={workflow.idempotencyStrategy} onChange={(event) => updateWorkflow({ idempotencyStrategy: event.target.value as WorkflowSettings['idempotencyStrategy'] })}><option>FAIL</option><option>RETURN_EXISTING</option><option>FAIL_ON_RUNNING</option></select></div></div><div className="form-toggle"><input type="checkbox" checked={workflow.restartable} onChange={(event) => updateWorkflow({ restartable: event.target.checked })} /><span>Allow restart from failed execution</span></div><label>Failure workflow (optional)</label><input value={workflow.failureWorkflow ?? ''} placeholder="failure_handler_workflow" onChange={(event) => updateWorkflow({ failureWorkflow: event.target.value })} />{validation.length > 0 && <div className="validation-list">{validation.slice(0, 5).map((item, index) => <div key={`${item.message}-${index}`} className={item.severity}><span>{item.severity === 'error' ? '!' : 'i'}</span>{item.message}</div>)}</div>}{importMessage && <div className="import-message">{importMessage}</div>}<div className="workflow-actions"><button className="outline-button" onClick={onOpenTasks}><Plus size={15} /> Add task</button><button className="outline-button" onClick={onExportBpmn}><Download size={14} /> Export BPMN</button><button className="outline-button" onClick={onExportConductor}><Download size={14} /> Conductor JSON</button><label className="outline-button file-button"><ArrowDownToLine size={14} /> Import BPMN<input type="file" accept=".bpmn,.xml,application/xml,text/xml" onChange={(event) => onImportBpmn(event.target.files?.[0])} /></label></div></div>
 }
