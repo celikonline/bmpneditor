@@ -225,6 +225,20 @@ test('uses advanced execution date filters', async ({ page }) => {
   await expect(page.getByLabel('Started before')).toHaveValue('')
 })
 
+test('selects executions and exposes bulk controls', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.clear()
+    window.localStorage.setItem('orkes-executions-v1', JSON.stringify([{ executionId: 'exec_bulk_1', workflowName: 'api_polling_workflow', version: 1, status: 'COMPLETED', input: {}, events: [], startedAt: '2026-01-01T10:00:00.000Z', completedAt: '2026-01-01T10:00:01.000Z', tasks: [] }]))
+  })
+  await page.goto('/executions')
+  await page.getByRole('button', { name: 'Select executions', exact: true }).click()
+  await page.locator('.platform-table-row').first().click()
+  await expect(page.getByText('1 selected', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Retry', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Clear selection', exact: true }).click()
+  await expect(page.getByText('1 selected', { exact: true })).toHaveCount(0)
+})
+
 test('imports raw BPMN XML through the conversion review dialog', async ({ page }) => {
   await page.addInitScript(() => window.localStorage.clear())
   await page.goto('/')

@@ -38,6 +38,10 @@ function ExecutionsPage() {
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [startedAfter, setStartedAfter] = useState('')
   const [startedBefore, setStartedBefore] = useState('')
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const [bulkMessage, setBulkMessage] = useState('')
   const [selected, setSelected] = useState<ExecutionRecord | null>(null)
   const refresh = () => { void workflowApi.listExecutions().then(setRecords) }
   useEffect(() => { refresh() }, [])
@@ -48,11 +52,41 @@ function ExecutionsPage() {
     const matchesBefore = !startedBefore || startedAt <= new Date(`${startedBefore}T23:59:59`).getTime()
     return matchesText && (status === 'ALL' || record.status === status) && matchesAfter && matchesBefore
   }), [query, records, startedAfter, startedBefore, status])
+  const toggleSelectionMode = () => {
+    setSelectionMode((enabled) => {
+      if (enabled) setSelectedIds([])
+      return !enabled
+    })
+    setBulkMessage('')
+  }
+  const bulkOperate = (operation: 'pause' | 'resume' | 'retry' | 'terminate') => {
+    const eligible = records.filter((record) => {
+      if (!selectedIds.includes(record.executionId)) return false
+      if (operation === 'pause' || operation === 'terminate') return ['RUNNING', 'PAUSED'].includes(record.status)
+      if (operation === 'resume') return record.status === 'PAUSED'
+      return ['COMPLETED', 'FAILED', 'TERMINATED', 'TIMED_OUT'].includes(record.status)
+    })
+    if (eligible.length === 0) {
+      setBulkMessage('No selected executions support this action.')
+      return
+    }
+    setBulkBusy(true)
+    setBulkMessage('')
+    const action = operation === 'pause' ? workflowApi.pauseExecution : operation === 'resume' ? workflowApi.resumeExecution : operation === 'retry' ? workflowApi.retryExecution : workflowApi.terminateExecution
+    void Promise.allSettled(eligible.map((record) => action(record.executionId))).then((results) => {
+      const completed = results.filter((result) => result.status === 'fulfilled').length
+      setBulkMessage(`${completed} of ${eligible.length} execution${eligible.length === 1 ? '' : 's'} updated.`)
+      setSelectedIds([])
+      refresh()
+    }).finally(() => setBulkBusy(false))
+  }
   if (selected) return <ExecutionDetail record={selected} onBack={() => { setSelected(null); refresh() }} />
   return <PageFrame eyebrow="EXECUTIONS / WORKFLOW" title="Workflow Executions" description="Search, inspect and operate workflow execution history." actions={<button className="outline-button" onClick={refresh}><RefreshCw size={15} /> Refresh</button>}>
-    <Toolbar><SearchBox value={query} onChange={setQuery} placeholder="Search execution, workflow or correlation ID..." /><label className="platform-select"><Filter size={15} /><select aria-label="Execution status filter" value={status} onChange={(event) => setStatus(event.target.value)}><option value="ALL">All statuses</option><option>RUNNING</option><option>PAUSED</option><option>COMPLETED</option><option>TERMINATED</option><option>FAILED</option></select></label><button className={`outline-button compact-button ${advancedOpen ? 'active-filter' : ''}`} onClick={() => setAdvancedOpen((open) => !open)}><Settings2 size={14} /> Advanced filters</button></Toolbar>
+    <Toolbar><SearchBox value={query} onChange={setQuery} placeholder="Search execution, workflow or correlation ID..." /><label className="platform-select"><Filter size={15} /><select aria-label="Execution status filter" value={status} onChange={(event) => setStatus(event.target.value)}><option value="ALL">All statuses</option><option>RUNNING</option><option>PAUSED</option><option>COMPLETED</option><option>TERMINATED</option><option>FAILED</option></select></label><button className={`outline-button compact-button ${advancedOpen ? 'active-filter' : ''}`} onClick={() => setAdvancedOpen((open) => !open)}><Settings2 size={14} /> Advanced filters</button><button className={`outline-button compact-button ${selectionMode ? 'active-filter' : ''}`} onClick={toggleSelectionMode} aria-pressed={selectionMode}>{selectionMode ? 'Done selecting' : 'Select executions'}</button>{selectionMode && selectedIds.length > 0 && <span className="toolbar-count execution-selection-count">{selectedIds.length} selected</span>}</Toolbar>
     {advancedOpen && <div className="execution-filter-panel"><label>Started after<input aria-label="Started after" type="date" value={startedAfter} onChange={(event) => setStartedAfter(event.target.value)} /></label><label>Started before<input aria-label="Started before" type="date" value={startedBefore} onChange={(event) => setStartedBefore(event.target.value)} /></label><button className="outline-button compact-button" onClick={() => { setStartedAfter(''); setStartedBefore(''); setStatus('ALL') }}>Clear filters</button></div>}
-    <div className="platform-card"><div className="platform-card-head"><div><strong>Recent executions</strong><span>{visible.length} result{visible.length === 1 ? '' : 's'}</span></div><div className="platform-card-metrics"><span><b>{records.filter((item) => item.status === 'RUNNING').length}</b> running</span><span><b>{records.filter((item) => item.status === 'COMPLETED').length}</b> completed</span></div></div>{visible.length === 0 ? <EmptyState icon={Activity} title="No executions found" detail="Run a workflow from the builder to populate this list." /> : <div className="platform-table"><div className="platform-table-head"><span>Execution</span><span>Workflow</span><span>Status</span><span>Started</span><span>Tasks</span><span /></div>{visible.map((record) => <button className="platform-table-row" key={record.executionId} onClick={() => setSelected(record)}><span><strong>{record.executionName || record.executionId}</strong><small>{record.executionId}</small></span><span>{record.workflowName}<small>Version {record.version}</small></span><span><StatusPill value={record.status} /></span><span>{formatTime(record.startedAt)}</span><span>{record.events.filter((event) => event.status === 'COMPLETED').length}/{record.events.length || '—'}</span><ChevronLeft className="rotate-180" size={15} /></button>)}</div>}</div>
+    {bulkMessage && <div className="platform-success">{bulkMessage}</div>}
+    {selectionMode && selectedIds.length > 0 && <div className="execution-bulk-actions"><span>Bulk actions</span><button className="outline-button compact-button" onClick={() => bulkOperate('pause')} disabled={bulkBusy}>Pause</button><button className="outline-button compact-button" onClick={() => bulkOperate('resume')} disabled={bulkBusy}>Resume</button><button className="outline-button compact-button" onClick={() => bulkOperate('retry')} disabled={bulkBusy}>Retry</button><button className="danger-button compact-button" onClick={() => bulkOperate('terminate')} disabled={bulkBusy}>Terminate</button><button className="text-button" onClick={() => setSelectedIds([])} disabled={bulkBusy}>Clear selection</button></div>}
+    <div className="platform-card"><div className="platform-card-head"><div><strong>Recent executions</strong><span>{visible.length} result{visible.length === 1 ? '' : 's'}</span></div><div className="platform-card-metrics"><span><b>{records.filter((item) => item.status === 'RUNNING').length}</b> running</span><span><b>{records.filter((item) => item.status === 'COMPLETED').length}</b> completed</span></div></div>{visible.length === 0 ? <EmptyState icon={Activity} title="No executions found" detail="Run a workflow from the builder to populate this list." /> : <div className="platform-table"><div className="platform-table-head"><span>Execution</span><span>Workflow</span><span>Status</span><span>Started</span><span>Tasks</span><span /></div>{visible.map((record) => { const isSelected = selectedIds.includes(record.executionId); return <button className={`platform-table-row ${isSelected ? 'execution-row-selected' : ''}`} key={record.executionId} onClick={() => selectionMode ? setSelectedIds((ids) => isSelected ? ids.filter((id) => id !== record.executionId) : [...ids, record.executionId]) : setSelected(record)}><span><i className={`execution-selection-indicator ${selectionMode ? 'visible' : ''} ${isSelected ? 'selected' : ''}`} aria-hidden="true" /><strong>{record.executionName || record.executionId}</strong><small>{record.executionId}</small></span><span>{record.workflowName}<small>Version {record.version}</small></span><span><StatusPill value={record.status} /></span><span>{formatTime(record.startedAt)}</span><span>{record.events.filter((event) => event.status === 'COMPLETED').length}/{record.events.length || '—'}</span><ChevronLeft className="rotate-180" size={15} /></button>})}</div>}</div>
   </PageFrame>
 }
 
