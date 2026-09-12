@@ -337,8 +337,8 @@ function ResourceRegistryPage({ view }: { view: ResourceView }) {
   const [agentModel, setAgentModel] = useState('')
   const [agentPrompt, setAgentPrompt] = useState('')
   const [agentMessage, setAgentMessage] = useState('')
+  useEffect(() => { if (config) window.localStorage.setItem(storageKey, JSON.stringify(items)) }, [config, items, storageKey])
   if (!config) return null
-  useEffect(() => { window.localStorage.setItem(storageKey, JSON.stringify(items)) }, [items, storageKey])
   const visible = items.filter((item) => `${item.name} ${item.detail} ${item.owner} ${item.status}`.toLowerCase().includes(query.toLowerCase()))
   const add = () => setItems((current) => [...current, { name: `new_${view.replaceAll('-', '_')}_${current.length + 1}`, detail: `New ${config.noun} ready for configuration`, owner: 'platform', status: 'PAUSED' }])
   const toggle = (name: string) => setItems((current) => current.map((item) => item.name === name ? { ...item, status: item.status === 'ACTIVE' ? 'PAUSED' : 'ACTIVE' } : item))
