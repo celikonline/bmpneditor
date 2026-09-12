@@ -195,6 +195,39 @@ test('supports the workflow builder entry options from the definitions list', as
   await expect(page.locator('.canvas-ribbon')).toContainText('0 tasks')
 })
 
+test('imports raw BPMN XML through the conversion review dialog', async ({ page }) => {
+  await page.addInitScript(() => window.localStorage.clear())
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Import BPMN', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Import BPMN', exact: true })).toBeVisible()
+  await page.getByLabel('BPMN XML').fill('<definitions><process><startEvent id="start"/><userTask id="approve" name="Approve"/><subProcess id="loop" name="Poll" data-task-type="DO_WHILE"/><endEvent id="end"/><sequenceFlow id="a" sourceRef="start" targetRef="approve"/><sequenceFlow id="b" sourceRef="approve" targetRef="loop"/><sequenceFlow id="c" sourceRef="loop" targetRef="end"/></process></definitions>')
+  await page.getByRole('button', { name: 'Review import', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Review imported workflow', exact: true })).toBeVisible()
+  await expect(page.getByText('4', { exact: true }).first()).toBeVisible()
+  await page.getByRole('button', { name: 'Apply conversion', exact: true }).click()
+  await expect(page.locator('.canvas-ribbon')).toContainText('2 tasks')
+  await expect(page.getByText('Approve', { exact: true })).toBeVisible()
+})
+
+test('resizes and remembers the inspector panel width', async ({ page }) => {
+  await page.addInitScript(() => { if (!window.sessionStorage.getItem('resize-test-started')) { window.localStorage.clear(); window.sessionStorage.setItem('resize-test-started', '1') } })
+  await page.goto('/')
+  const panel = page.locator('.panel-shell')
+  const handle = page.locator('.panel-resize-handle')
+  const initialWidth = await panel.evaluate((element) => element.getBoundingClientRect().width)
+  const box = await handle.boundingBox()
+  expect(box).not.toBeNull()
+  if (!box) return
+  await page.mouse.move(box.x + box.width / 2, box.y + 180)
+  await page.mouse.down()
+  await page.mouse.move(box.x - 70, box.y + 180)
+  await page.mouse.up()
+  const resizedWidth = await panel.evaluate((element) => element.getBoundingClientRect().width)
+  expect(resizedWidth).toBeGreaterThan(initialWidth + 40)
+  await page.reload()
+  await expect.poll(() => panel.evaluate((element) => element.getBoundingClientRect().width)).toBe(resizedWidth)
+})
+
 test('navigates the supporting Conductor platform screens from the sidebar', async ({ page }) => {
   await page.addInitScript(() => window.localStorage.clear())
   await page.goto('/')

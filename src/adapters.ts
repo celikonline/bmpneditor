@@ -74,13 +74,19 @@ export function workflowToBpmn(nodes: StudioNode[], workflowName: string, edges:
     if (node.type === 'end') return `<bpmn:endEvent id="${escapeXml(node.id)}" name="${safe}" />`
     if (node.type === 'switch') return `<bpmn:exclusiveGateway id="${escapeXml(node.id)}" name="${safe}" data-reference-name="${escapeXml(node.data.ref)}" />`
     if (node.type === 'join') return `<bpmn:parallelGateway id="${escapeXml(node.id)}" name="${safe}" />`
+    if (node.type === 'loop' || node.data.kind === 'DO_WHILE') return `<bpmn:subProcess id="${escapeXml(node.id)}" name="${safe}" data-task-type="${escapeXml(node.data.kind)}" data-reference-name="${escapeXml(node.data.ref)}" />`
+    if (node.data.kind === 'SUB_WORKFLOW' || node.data.kind === 'START_WORKFLOW') return `<bpmn:callActivity id="${escapeXml(node.id)}" name="${safe}" data-task-type="${escapeXml(node.data.kind)}" data-reference-name="${escapeXml(node.data.ref)}" />`
+    if (node.data.kind === 'HUMAN') return `<bpmn:userTask id="${escapeXml(node.id)}" name="${safe}" data-task-type="HUMAN" data-reference-name="${escapeXml(node.data.ref)}" />`
+    if (node.data.kind === 'INLINE') return `<bpmn:scriptTask id="${escapeXml(node.id)}" name="${safe}" data-task-type="INLINE" data-reference-name="${escapeXml(node.data.ref)}" />`
+    if (node.data.kind === 'EVENT' || node.data.kind === 'KAFKA_PUBLISH' || node.data.kind === 'SENDGRID') return `<bpmn:sendTask id="${escapeXml(node.id)}" name="${safe}" data-task-type="${escapeXml(node.data.kind)}" data-reference-name="${escapeXml(node.data.ref)}" />`
+    if (node.data.kind === 'WAIT_FOR_EVENT' || node.data.kind === 'WAIT_FOR_WEBHOOK') return `<bpmn:intermediateCatchEvent id="${escapeXml(node.id)}" name="${safe}" data-task-type="${escapeXml(node.data.kind)}" data-reference-name="${escapeXml(node.data.ref)}" />`
     return `<bpmn:serviceTask id="${escapeXml(node.id)}" name="${safe}" data-task-type="${escapeXml(node.data.kind)}" data-reference-name="${escapeXml(node.data.ref)}" />`
   })
   const flows = edges
     .filter((item) => nodes.some((node) => node.id === item.source) && nodes.some((node) => node.id === item.target))
     .map((item, index) => `<bpmn:sequenceFlow id="${escapeXml(item.id || `flow_${index + 1}`)}" sourceRef="${escapeXml(item.source)}" targetRef="${escapeXml(item.target)}"${item.label ? ` name="${escapeXml(String(item.label))}"` : ''} />`)
   const shapes = nodes.map((node) => {
-    const geometry = node.type === 'start' || node.type === 'end' ? { width: 36, height: 36 } : node.type === 'switch' || node.type === 'join' ? { width: 54, height: 54 } : { width: 180, height: 76 }
+    const geometry = node.type === 'start' || node.type === 'end' ? { width: 36, height: 36 } : node.type === 'switch' || node.type === 'join' ? { width: 54, height: 54 } : node.type === 'loop' ? { width: 220, height: 110 } : { width: 180, height: 76 }
     return `<bpmndi:BPMNShape id="${escapeXml(node.id)}_di" bpmnElement="${escapeXml(node.id)}"><dc:Bounds x="${Math.round(node.position.x)}" y="${Math.round(node.position.y)}" width="${geometry.width}" height="${geometry.height}" /></bpmndi:BPMNShape>`
   })
   const diEdges = edges
@@ -88,9 +94,9 @@ export function workflowToBpmn(nodes: StudioNode[], workflowName: string, edges:
     .map((item, index) => {
       const source = nodes.find((node) => node.id === item.source)!
       const target = nodes.find((node) => node.id === item.target)!
-      const sourceX = Math.round(source.position.x + (source.type === 'start' || source.type === 'end' ? 18 : source.type === 'switch' || source.type === 'join' ? 27 : 90))
-      const sourceY = Math.round(source.position.y + (source.type === 'start' || source.type === 'end' ? 36 : source.type === 'switch' || source.type === 'join' ? 54 : 76))
-      const targetX = Math.round(target.position.x + (target.type === 'start' || target.type === 'end' ? 18 : target.type === 'switch' || target.type === 'join' ? 27 : 90))
+      const sourceX = Math.round(source.position.x + (source.type === 'start' || source.type === 'end' ? 18 : source.type === 'switch' || source.type === 'join' ? 27 : source.type === 'loop' ? 110 : 90))
+      const sourceY = Math.round(source.position.y + (source.type === 'start' || source.type === 'end' ? 36 : source.type === 'switch' || source.type === 'join' ? 54 : source.type === 'loop' ? 110 : 76))
+      const targetX = Math.round(target.position.x + (target.type === 'start' || target.type === 'end' ? 18 : target.type === 'switch' || target.type === 'join' ? 27 : target.type === 'loop' ? 110 : 90))
       const targetY = Math.round(target.position.y)
       return `<bpmndi:BPMNEdge id="${escapeXml(item.id || `flow_${index + 1}`)}_di" bpmnElement="${escapeXml(item.id || `flow_${index + 1}`)}"><di:waypoint x="${sourceX}" y="${sourceY}" /><di:waypoint x="${targetX}" y="${targetY}" /></bpmndi:BPMNEdge>`
     })
@@ -118,9 +124,9 @@ export function bpmnToWorkflow(xml: string): ImportReview {
   if (flowElements.length === 0) errors.push('No supported BPMN flow elements were found.')
 
   const nodes: StudioNode[] = flowElements.map((element, index) => {
-    const type: StudioNode['type'] = element.localName === 'startEvent' ? 'start' : element.localName === 'endEvent' ? 'end' : element.localName === 'exclusiveGateway' ? 'switch' : element.localName === 'parallelGateway' ? 'join' : 'studio'
+    const type: StudioNode['type'] = element.localName === 'startEvent' ? 'start' : element.localName === 'endEvent' ? 'end' : element.localName === 'exclusiveGateway' ? 'switch' : element.localName === 'parallelGateway' ? 'join' : element.localName === 'subProcess' ? 'loop' : 'studio'
     const declaredKind = element.getAttribute('data-task-type') as TaskKind | null
-    const kind: TaskKind = type === 'switch' ? 'SWITCH' : type === 'join' || type === 'start' || type === 'end' ? 'SIMPLE' : isOfficialTaskKind(declaredKind) ? declaredKind : element.localName === 'userTask' ? 'HUMAN' : 'SIMPLE'
+    const kind: TaskKind = type === 'switch' ? 'SWITCH' : type === 'join' || type === 'start' || type === 'end' ? 'SIMPLE' : isOfficialTaskKind(declaredKind) ? declaredKind : element.localName === 'userTask' ? 'HUMAN' : element.localName === 'scriptTask' ? 'INLINE' : element.localName === 'sendTask' ? 'EVENT' : element.localName === 'receiveTask' || element.localName === 'intermediateCatchEvent' ? 'WAIT_FOR_EVENT' : element.localName === 'callActivity' ? 'SUB_WORKFLOW' : 'SIMPLE'
     const label = element.getAttribute('name') || `${element.localName}_${index + 1}`
     const ref = element.getAttribute('data-reference-name') || `${label.toLowerCase().replace(/[^a-z0-9]+/g, '_')}_ref`
     return { id: element.getAttribute('id') || `${type}-${index}`, type, position: { x: 180, y: 50 + index * 120 }, data: { label, ref, kind, config: type === 'switch' ? { expression: '', cases: [] } : {} } }
@@ -414,7 +420,7 @@ function isSupportedTaskKind(value: unknown): value is TaskKind {
 }
 
 function isSupportedElement(name: string | null) {
-  return Boolean(name && ['startEvent', 'endEvent', 'serviceTask', 'task', 'userTask', 'exclusiveGateway', 'parallelGateway'].includes(name))
+  return Boolean(name && ['startEvent', 'endEvent', 'serviceTask', 'task', 'userTask', 'exclusiveGateway', 'parallelGateway', 'subProcess', 'callActivity', 'scriptTask', 'sendTask', 'receiveTask', 'intermediateCatchEvent'].includes(name))
 }
 
 function isFlowElement(name: string | null) {

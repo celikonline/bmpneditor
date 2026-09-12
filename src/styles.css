@@ -45,6 +45,11 @@ button { border: 0; background: none; color: inherit; cursor: pointer; }
 .save-wrap { position: relative; display: inline-flex; }.save-chevron { margin-left: -18px; background: #1168bd; color: #fff !important; border-radius: 0 6px 6px 0; padding: 10px 8px; }.save-menu { position: absolute; top: 39px; right: 0; width: 155px; padding: 6px; background: #fff; border: 1px solid #dfe7ed; border-radius: 7px; box-shadow: 0 7px 20px rgba(27,52,72,.16); z-index: 20; }.save-menu button { display: block; width: 100%; padding: 8px 7px; color: #557086; font-size: 10px; text-align: left; border-radius: 4px; }.save-menu button:hover { background: #f3f8fc; color: #1976d2; }
 .workspace { flex: 1; min-height: 0; display: flex; }
 .canvas-area { position: relative; flex: 1; min-width: 0; background: #fff; }
+.panel-shell { position: relative; flex: 0 0 auto; min-width: 300px; max-width: 520px; height: 100%; }
+.panel-shell > .right-panel { width: 100%; min-width: 0; max-width: none; height: 100%; }
+.panel-resize-handle { position: relative; z-index: 8; flex: 0 0 7px; width: 7px; cursor: col-resize; background: #f7f9fb; border-left: 1px solid #e3e8ed; border-right: 1px solid #e3e8ed; }
+.panel-resize-handle span { position: absolute; top: 50%; left: 2px; width: 2px; height: 34px; transform: translateY(-50%); border-radius: 999px; background: #b8c9d7; }
+.panel-resize-handle:hover, .panel-resize-handle:active { background: #edf6fd; border-color: #9fc7e5; }.panel-resize-handle:hover span, .panel-resize-handle:active span { background: #398bcf; }
 .canvas-area .react-flow { background: #fff; }
 .canvas-toolbar { position: absolute; z-index: 5; top: 14px; left: 8px; display: flex; align-items: center; background: #fff; border: 1px solid #e6ebef; box-shadow: 0 2px 7px rgba(31,53,74,.09); border-radius: 5px; overflow: hidden; }
 .canvas-toolbar button, .canvas-toolbar .zoom-value { height: 34px; min-width: 33px; display: grid; place-items: center; border-right: 1px solid #eef1f4; color: #718194; font-size: 13px; }
@@ -260,6 +265,12 @@ button:disabled { cursor: default; }
 .catalog-error strong { font-size: 11px; color: #93434e; }
 .catalog-error .outline-button { justify-self: start; margin-top: 5px; }
 @keyframes catalog-shimmer { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
+.bpmn-import-modal { width: min(700px, calc(100% - 36px)); }
+.bpmn-file-drop { position: relative; min-height: 94px; display: grid; place-content: center; justify-items: center; gap: 6px; margin: 0 0 15px; border: 1px dashed #9ec7e6; border-radius: 7px; background: #f6fbff; color: #6e8aa1; cursor: pointer; }
+.bpmn-file-drop:hover { border-color: #4c99d8; background: #eef8ff; }
+.bpmn-file-drop svg { color: #398acb; }.bpmn-file-drop strong { color: #4d6b82; font-size: 11px; }.bpmn-file-drop span { color: #8da0ae; font-size: 10px; }.bpmn-file-drop input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.bpmn-xml-input { min-height: 180px; resize: vertical; border: 1px solid #dce5ec; border-radius: 5px; padding: 11px; outline: 0; color: #38536e; font: 10px/1.55 Consolas, monospace; }
+.bpmn-xml-input:focus { border-color: #4794e6; box-shadow: 0 0 0 3px rgba(71,148,230,.12); }
 
 /* Platform pages mirror the supporting Conductor screens around the workflow editor. */
 .platform-shell { min-height: 100vh; display: flex; background: #f6f8fa; color: #263c50; }

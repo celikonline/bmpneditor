@@ -119,6 +119,15 @@ describe('BPMN adapter', () => {
     expect(review.edges).toHaveLength(2)
   })
 
+  it('maps BPMN task variants to their canonical task kinds', () => {
+    const review = bpmnToWorkflow('<definitions><process><startEvent id="start"/><userTask id="approve" name="Approve"/><subProcess id="poll" name="Poll" data-task-type="DO_WHILE"/><scriptTask id="transform" name="Transform"/><receiveTask id="event" name="Wait for event"/><endEvent id="end"/><sequenceFlow id="a" sourceRef="start" targetRef="approve"/><sequenceFlow id="b" sourceRef="approve" targetRef="poll"/><sequenceFlow id="c" sourceRef="poll" targetRef="transform"/><sequenceFlow id="d" sourceRef="transform" targetRef="event"/><sequenceFlow id="e" sourceRef="event" targetRef="end"/></process></definitions>')
+    expect(review.errors).toEqual([])
+    expect(review.nodes.find((item) => item.id === 'approve')?.data.kind).toBe('HUMAN')
+    expect(review.nodes.find((item) => item.id === 'poll')?.type).toBe('loop')
+    expect(review.nodes.find((item) => item.id === 'transform')?.data.kind).toBe('INLINE')
+    expect(review.nodes.find((item) => item.id === 'event')?.data.kind).toBe('WAIT_FOR_EVENT')
+  })
+
   it('creates a versioned Conductor definition with task input mappings', () => {
     const definition = toConductorDefinition([node('task', 'Call API', 'call_api_ref')], 'demo_workflow', 7)
     expect(definition).toMatchObject({ name: 'demo_workflow', version: 7, schemaVersion: 2 })

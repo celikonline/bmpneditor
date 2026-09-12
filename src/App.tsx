@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import {
   addEdge,
   applyEdgeChanges,
@@ -177,6 +177,13 @@ function App() {
   const { activeTab, setActiveTab, selectedId, setSelectedId, operationContext, setOperationContext, drawerOpen, setDrawerOpen, quickAddOpen, setQuickAddOpen, contextMenu, setContextMenu } = useEditorState()
   const [query, setQuery] = useState('')
   const [saved, setSaved] = useState(false)
+  const [inspectorWidth, setInspectorWidth] = useState(() => {
+    const stored = Number(window.localStorage.getItem('orkes-studio-inspector-width'))
+    return Number.isFinite(stored) && stored >= 300 && stored <= 520 ? stored : 345
+  })
+  useEffect(() => {
+    window.localStorage.setItem('orkes-studio-inspector-width', String(inspectorWidth))
+  }, [inspectorWidth])
   const [history, setHistory] = useState<GraphSnapshot[]>([])
   const [future, setFuture] = useState<GraphSnapshot[]>([])
   const [codeText, setCodeText] = useState('')
@@ -191,6 +198,7 @@ function App() {
   const [saveMenu, setSaveMenu] = useState(false)
   const [publishMessage, setPublishMessage] = useState<string | null>(null)
   const [importReview, setImportReview] = useState<{ review: ImportReview; name: string } | null>(null)
+  const [bpmnImportOpen, setBpmnImportOpen] = useState(false)
   const [testResult, setTestResult] = useState<string | null>(null)
   const [completedNodeIds, setCompletedNodeIds] = useState<string[]>([])
   const [executionEvents, setExecutionEvents] = useState<Array<{ id: string; label: string; status: TaskExecutionStatus }>>([])
@@ -462,6 +470,24 @@ function App() {
     setNodes(next.nodes)
     setEdges(next.edges)
     setFuture((current) => current.slice(0, -1))
+  }
+
+  const startInspectorResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    const startX = event.clientX
+    const startWidth = inspectorWidth
+    let latestWidth = startWidth
+    const onMove = (moveEvent: PointerEvent) => {
+      latestWidth = Math.max(300, Math.min(520, startWidth - (moveEvent.clientX - startX)))
+      setInspectorWidth(latestWidth)
+    }
+    const onUp = () => {
+      setInspectorWidth(latestWidth)
+      window.localStorage.setItem('orkes-studio-inspector-width', String(latestWidth))
+      window.removeEventListener('pointermove', onMove)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp, { once: true })
   }
 
   useEffect(() => {
@@ -779,6 +805,13 @@ function App() {
     setImportReview({ review, name: file.name.replace(/\.bpmn$/i, '') || workflow.name })
   }
 
+  const importBpmnSource = (source: string, name = workflow.name) => {
+    const review = bpmnToWorkflow(source)
+    if (review.errors.length) { setImportMessage(review.errors.join(' ')); return }
+    setBpmnImportOpen(false)
+    setImportReview({ review, name: name.replace(/\.(bpmn|xml)$/i, '') || workflow.name })
+  }
+
   const applyImport = () => {
     if (!can(role, 'workflow:edit')) { setImportMessage('Your role cannot import workflow definitions.'); setImportReview(null); return }
     if (!importReview) return
@@ -827,6 +860,7 @@ function App() {
 <div className="version-wrap"><button className="version-control" onClick={() => setVersionMenu((open) => !open)}><span className="globe-icon">⊕</span> Version {workflow.version} <ChevronDown size={14} /></button>{versionMenu && <div className="version-menu"><strong>Workflow versions</strong>{versionHistory.slice().reverse().map((snapshot) => <button className={`version-row ${snapshot.version === workflow.version ? 'active' : ''}`} key={`${snapshot.version}-${snapshot.status}`} onClick={() => { if (dirty && !window.confirm('Discard unsaved workflow changes?')) return; if (snapshot.version !== workflow.version || snapshot.status === 'PUBLISHED') restoreVersionSnapshot(snapshot); setVersionMenu(false) }}><span><span className={`version-dot ${snapshot.status === 'PUBLISHED' ? 'published-dot' : ''}`} /> Version {snapshot.version}</span><small>{snapshot.status === 'PUBLISHED' ? 'Published · immutable' : snapshot.version === workflow.version ? 'Current draft' : 'Saved draft'}</small></button>)}<button className="version-row" onClick={createVersion}><span><Plus size={14} /> Create new version</span><small>Clone current draft</small></button><button className="version-row publish-row" onClick={publishVersion}><span><Check size={14} /> Publish version</span><small>{validation.some((item) => item.severity === 'error') ? 'Blocked by validation' : 'Lock this definition'}</small></button></div>}</div>
 <button className="text-action danger" onClick={deleteWorkflow}><Trash2 size={15} /> Delete</button>
 <button className="text-action muted" onClick={resetDraft}><RotateCcw size={15} /> Reset</button>
+<button className="text-action" onClick={() => setBpmnImportOpen(true)}><ArrowDownToLine size={15} /> Import BPMN</button>
           <div className="download-wrap"><button className="text-action" onClick={() => setDownloadMenu((open) => !open)}><Download size={15} /> Download <ChevronDown size={12} /></button>{downloadMenu && <div className="download-menu"><strong>Export definition</strong><button onClick={() => { downloadWorkflow(); setDownloadMenu(false) }}>Workflow JSON</button><button onClick={() => { downloadBpmn(); setDownloadMenu(false) }}>BPMN XML</button><button onClick={() => { downloadSvg(); setDownloadMenu(false) }}>SVG diagram</button><button onClick={() => { downloadPng(); setDownloadMenu(false) }}>PNG diagram</button><button onClick={() => { downloadConductor(nodes, workflow.name); setDownloadMenu(false) }}>Conductor JSON</button></div>}</div>
           <button className='primary-action' disabled={!can(role, 'workflow:execute')} onClick={() => setExecuteOpen(true)}><Play size={15} fill="currentColor" /> Execute</button>
           <div className="save-wrap"><button className={`save-action ${saved ? 'is-saved' : ''}`} disabled={!can(role, 'workflow:edit')} onClick={saveWorkflow}><Save size={15} /> {saved ? 'Saved' : 'Save'}</button><button className="save-chevron" onClick={() => setSaveMenu((open) => !open)}><ChevronDown size={14} /></button>{saveMenu && <div className="save-menu"><button onClick={() => { saveWorkflow(); setSaveMenu(false) }}>Save draft</button><button onClick={saveAsNewVersion}>Save as new version</button><button onClick={() => { publishVersion(); setSaveMenu(false) }}>Publish</button></div>}</div>
@@ -851,12 +885,16 @@ function App() {
 <AssistantDock open={assistantOpen} onToggle={() => setAssistantOpen((open) => !open)} onGenerate={generateAssistantDraft} history={assistantHistory} />
           {validationOpen && <ValidationDrawer issues={validation} onClose={() => setValidationOpen(false)} onFocus={(nodeId) => { setSelectedId(nodeId); setDrawerOpen(false); setActiveTab('Task') }} />}
           {importReview && <ImportReviewModal review={importReview.review} name={importReview.name} onCancel={() => setImportReview(null)} onApply={applyImport} />}
+          {bpmnImportOpen && <BpmnImportModal workflowName={workflow.name} onCancel={() => setBpmnImportOpen(false)} onImport={importBpmnSource} />}
           {executeOpen && <ExecuteDialogV2 input={executionInput} setInput={setExecutionInput} options={executionOptions} setOptions={(patch) => setExecutionOptions((current) => ({ ...current, ...patch }))} workflow={workflow} validation={validation} onCancel={() => setExecuteOpen(false)} onRun={runWorkflow} />}
           {assistantReview && <AssistantReviewModal review={assistantReview} onCancel={() => setAssistantReview(null)} onApply={applyAssistantDraft} />}
         </section>
 
-        {drawerOpen && <PortedAddTaskDrawer query={query} setQuery={setQuery} tasks={catalogItems} loading={catalogLoading} error={catalogError} onRetry={() => { setCatalogError(null); setCatalogLoading(true); void workflowApi.getTaskCatalog().then((items) => setCatalogItems(items)).catch((error: unknown) => setCatalogError(error instanceof Error ? error.message : 'Task catalog could not be loaded.')).finally(() => setCatalogLoading(false)) }} onClose={() => setDrawerOpen(false)} onAdd={addTask} />}
- {!drawerOpen && <Inspector activeTab={activeTab} setActiveTab={setActiveTab} selectedNode={selectedNode} onDelete={deleteSelected} onOpenTasks={() => setDrawerOpen(true)} onUpdateNode={updateSelectedNode} codeText={codeText} setCodeText={setCodeText} applyJson={applyJson} codeError={codeError} workflow={workflow} updateWorkflow={updateWorkflowWithRole} validation={validation} runState={runState} onRun={runWorkflow} onPause={pauseExecution} onResume={resumeExecution} onTerminate={terminateExecution} onImportBpmn={importBpmn} onExportBpmn={downloadBpmn} onExportConductor={() => downloadConductor(nodes, workflow.name)} lastSavedJson={lastSavedJson} versionHistory={versionHistory} importMessage={importMessage} testResult={testResult} onTest={testSelectedTask} executionEvents={executionEvents} executionInput={executionInput} lastExecution={lastExecution} realtimeEvent={lastRealtimeEvent} nodes={nodes} />}
+        <div className="panel-resize-handle" role="separator" aria-label="Resize inspector panel" aria-orientation="vertical" onPointerDown={startInspectorResize}><span /></div>
+        <div className="panel-shell" style={{ width: inspectorWidth }}>
+          {drawerOpen && <PortedAddTaskDrawer query={query} setQuery={setQuery} tasks={catalogItems} loading={catalogLoading} error={catalogError} onRetry={() => { setCatalogError(null); setCatalogLoading(true); void workflowApi.getTaskCatalog().then((items) => setCatalogItems(items)).catch((error: unknown) => setCatalogError(error instanceof Error ? error.message : 'Task catalog could not be loaded.')).finally(() => setCatalogLoading(false)) }} onClose={() => setDrawerOpen(false)} onAdd={addTask} />}
+          {!drawerOpen && <Inspector activeTab={activeTab} setActiveTab={setActiveTab} selectedNode={selectedNode} onDelete={deleteSelected} onOpenTasks={() => setDrawerOpen(true)} onUpdateNode={updateSelectedNode} codeText={codeText} setCodeText={setCodeText} applyJson={applyJson} codeError={codeError} workflow={workflow} updateWorkflow={updateWorkflowWithRole} validation={validation} runState={runState} onRun={runWorkflow} onPause={pauseExecution} onResume={resumeExecution} onTerminate={terminateExecution} onImportBpmn={importBpmn} onExportBpmn={downloadBpmn} onExportConductor={() => downloadConductor(nodes, workflow.name)} lastSavedJson={lastSavedJson} versionHistory={versionHistory} importMessage={importMessage} testResult={testResult} onTest={testSelectedTask} executionEvents={executionEvents} executionInput={executionInput} lastExecution={lastExecution} realtimeEvent={lastRealtimeEvent} nodes={nodes} />}
+        </div>
       </main>
 
       <footer className={`statusbar ${validation.length ? 'has-validation' : ''}`}><button className="validation-status" onClick={() => setValidationOpen((open) => !open)}><Check size={14} /> <strong>{validation.length ? `${validation.length} validation ${validation.length === 1 ? 'issue' : 'issues'} found.` : '0 warnings found.'}</strong></button><div className="status-actions"><button onClick={undo} disabled={!history.length}><Undo2 size={14} /> Undo</button><button onClick={redo} disabled={!future.length}><Redo2 size={14} /> Redo</button><span>{savedAt ? `Saved ${new Date(savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Not saved yet'}</span></div></footer>
@@ -921,6 +959,13 @@ function NodeContextMenu({ x, y, onCopy, onDuplicate, onTest, onViewJson, onDele
 
 function ImportReviewModal({ review, name, onCancel, onApply }: { review: ImportReview; name: string; onCancel: () => void; onApply: () => void }) {
   return <div className="modal-backdrop"><section className="import-review-modal"><div className="modal-head"><div><span className="eyebrow">BPMN CONVERSION REVIEW</span><h2>Review imported workflow</h2><p>{name}.bpmn will be converted to the canonical workflow graph.</p></div><button onClick={onCancel}><X size={17} /></button></div><div className="review-stats"><div><strong>{review.nodes.length}</strong><span>Supported elements</span></div><div><strong>{review.edges.length}</strong><span>Connections</span></div><div><strong>{review.warnings.length}</strong><span>Warnings</span></div><div><strong>{review.errors.length}</strong><span>Errors</span></div></div>{review.errors.length > 0 && <div className="review-message error"><strong>Conversion blocked</strong><span>{review.errors.join(' ')}</span></div>}{review.warnings.length > 0 && <div className="review-message warning"><strong>Review required</strong><span>{review.warnings.join(' ')}</span></div>}<div className="review-mapping"><span>Mapping preview</span><div><code>startEvent</code><ChevronRight size={13} /><code>Start</code></div><div><code>serviceTask / userTask</code><ChevronRight size={13} /><code>Task / HTTP or Human</code></div><div><code>exclusiveGateway</code><ChevronRight size={13} /><code>Switch + labeled routes</code></div><div><code>sequenceFlow</code><ChevronRight size={13} /><code>{review.edges.length} graph connections</code></div></div><div className="modal-actions"><button className="outline-button" onClick={onCancel}>Cancel</button><button className="primary-action" disabled={review.errors.length > 0} onClick={onApply}><Check size={14} /> Apply conversion</button></div></section></div>
+}
+
+function BpmnImportModal({ workflowName, onCancel, onImport }: { workflowName: string; onCancel: () => void; onImport: (source: string, name: string) => void }) {
+  const [source, setSource] = useState('')
+  const [name, setName] = useState(workflowName)
+  const loadFile = (file?: File) => { if (!file) return; setName(file.name.replace(/\.(bpmn|xml)$/i, '')); void file.text().then(setSource) }
+  return <div className="modal-backdrop"><section className="platform-modal bpmn-import-modal"><div className="modal-head"><div><span className="eyebrow">WORKFLOW IMPORT</span><h2>Import BPMN</h2><p>Upload a .bpmn/.xml file or paste raw BPMN XML for conversion review.</p></div><button onClick={onCancel}><X size={17} /></button></div><label className="bpmn-file-drop" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); loadFile(event.dataTransfer.files?.[0]) }}><ArrowDownToLine size={20} /><strong>Drop BPMN file here</strong><span>or click to select a .bpmn or .xml file</span><input type="file" accept=".bpmn,.xml,application/xml,text/xml" onChange={(event) => loadFile(event.target.files?.[0])} /></label><div className="modal-fields"><label>Workflow name<input value={name} onChange={(event) => setName(event.target.value)} /></label><label>Paste XML<textarea className="bpmn-xml-input" aria-label="BPMN XML" value={source} onChange={(event) => setSource(event.target.value)} placeholder="<definitions>...</definitions>" spellCheck={false} /></label></div><div className="modal-actions"><button className="outline-button" onClick={onCancel}>Cancel</button><button className="primary-action" disabled={!source.trim()} onClick={() => onImport(source, name)}><Check size={14} /> Review import</button></div></section></div>
 }
 
 function Inspector({ activeTab, setActiveTab, selectedNode, onDelete, onOpenTasks, onUpdateNode, codeText, setCodeText, applyJson, codeError, workflow, updateWorkflow, validation, runState, onRun, onPause, onResume, onTerminate, onImportBpmn, onExportBpmn, onExportConductor, lastSavedJson, versionHistory, importMessage, testResult, onTest, executionEvents, executionInput, lastExecution, realtimeEvent, nodes }: { activeTab: string; setActiveTab: (v: string) => void; selectedNode?: StudioNode; onDelete: () => void; onOpenTasks: () => void; onUpdateNode: (patch: Partial<StudioNode['data']>) => void; codeText: string; setCodeText: (v: string) => void; applyJson: () => void; codeError: string | null; workflow: WorkflowSettings; updateWorkflow: (patch: Partial<WorkflowSettings>) => void; validation: Array<{ severity: 'error' | 'warning'; message: string; nodeId?: string }>; runState: RunState; onRun: () => void; onPause: () => void; onResume: () => void; onTerminate: () => void; onImportBpmn: (file?: File) => void; onExportBpmn: () => void; onExportConductor: () => void; lastSavedJson: string; versionHistory: WorkflowVersionSnapshot[]; importMessage: string | null; testResult: string | null; onTest: () => void; executionEvents: Array<{ id: string; label: string; status: TaskExecutionStatus }>; executionInput: string; lastExecution: ExecutionRecord | null; realtimeEvent: RealtimeExecutionEvent['type'] | null; nodes: StudioNode[] }) {
