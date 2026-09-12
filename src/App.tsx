@@ -87,6 +87,12 @@ const initialEdges: Edge[] = [
   edge('e6', 'route-status', 'timeout', 'defaultCase'), edge('e7', 'route-status', 'failure', 'failed'), edge('e8', 'route-status', 'success', 'completed'), edge('e9', 'timeout', 'join'), edge('e10', 'failure', 'join'), edge('e11', 'success', 'join'), edge('e12', 'join', 'end'),
 ]
 
+const blankNodes: StudioNode[] = [
+  { id: 'start', type: 'start', position: { x: 210, y: 24 }, data: { label: 'Start', ref: 'start', kind: 'SIMPLE' } },
+  { id: 'end', type: 'end', position: { x: 210, y: 175 }, data: { label: 'End', ref: 'end', kind: 'SIMPLE' } },
+]
+const blankEdges: Edge[] = [edge('blank-start-end', 'start', 'end')]
+
 function layoutGraph(nodes: StudioNode[], edges: Edge[]): StudioNode[] {
   const distance = new Map<string, number>(nodes.filter((node) => node.type === 'start').map((node) => [node.id, 0]))
   for (let pass = 0; pass < nodes.length; pass += 1) edges.forEach((item) => {
@@ -125,6 +131,7 @@ function svgEscape(value: string) { return value.replace(/[<>&"]/g, (character) 
 type ExecutionOptions = { correlationId: string; priority: string; executionName: string; metadata: string; idempotencyKey: string }
 type GraphSnapshot = { nodes: StudioNode[]; edges: Edge[] }
 type RunState = 'idle' | 'running' | 'paused' | 'completed' | 'terminated'
+type BuilderEntry = 'blank' | 'template' | 'ai'
 const graphSnapshot = (nodes: StudioNode[], edges: Edge[]): GraphSnapshot => ({ nodes, edges })
 
 function App() {
@@ -268,8 +275,8 @@ function App() {
 
   useEffect(() => {
     if (!nodes.length) {
-      setNodes(initialNodes)
-      setEdges(initialEdges)
+      setNodes(initialNodes, false)
+      setEdges(initialEdges, false)
     }
   }, [nodes.length, setEdges, setNodes])
 
@@ -360,7 +367,33 @@ function App() {
   }
 
   const openWorkflowList = () => { if (dirty && !window.confirm('Discard unsaved workflow changes and return to the workflow list?')) return; window.history.pushState({}, '', '/workflows'); setPage('list') }
- const openBuilder = () => { window.history.pushState({}, '', '/'); setPage('builder') }
+  const openBuilder = (entry: BuilderEntry = 'template') => {
+    if (dirty && !window.confirm('Discard unsaved workflow changes and start another workflow?')) return
+    if (entry === 'blank') {
+      replaceDraft(structuredClone(blankNodes), { name: 'new_workflow', description: 'A new workflow definition.', inputSchema: '', outputSchema: '', version: 1 })
+      setEdges(structuredClone(blankEdges))
+    }
+    if (entry === 'template') {
+      replaceDraft(structuredClone(initialNodes), { name: 'api_polling_workflow', description: 'Submits a job to an external API, polls for its status until completed or failed, then routes based on the outcome.', version: 1 })
+      setEdges(structuredClone(initialEdges))
+    }
+    window.history.pushState({}, '', '/'); setPage('builder'); setSelectedId(null); setDrawerOpen(false); setAssistantOpen(entry === 'ai'); setActiveTab('Workflow')
+  }
+
+  const importJsonFromList = async (file?: File) => {
+    if (!file) return
+    try {
+      const parsed = JSON.parse(await file.text()) as unknown
+      const graph = conductorJsonToGraph(parsed, blankNodes)
+      if (graph.errors.length) throw new Error(graph.errors.join(' '))
+      replaceDraft(graph.nodes, graph.workflow)
+      setEdges(graph.edges)
+      setImportMessage(graph.warnings.length ? graph.warnings.join(' ') : 'Workflow JSON imported. Review the graph before saving.')
+      window.history.pushState({}, '', '/'); setPage('builder'); setSelectedId(null); setActiveTab('Workflow'); setDrawerOpen(false)
+    } catch (error: unknown) {
+      setImportMessage(error instanceof Error ? `JSON import failed: ${error.message}` : 'JSON import failed.')
+    }
+  }
 
   const deleteWorkflow = () => {
     if (!can(role, 'workflow:edit')) { setImportMessage('Your role cannot delete this workflow.'); return }
@@ -689,7 +722,7 @@ function App() {
     setContextMenu(null)
   }
 
-  if (page === 'list') return <WorkflowList onOpen={openBuilder} />
+  if (page === 'list') return <WorkflowList onOpen={openBuilder} onImportJson={importJsonFromList} />
 
   const importBpmn = async (file?: File) => {
     if (!file) return
@@ -809,15 +842,17 @@ function AssistantReviewModal({ review, onCancel, onApply }: { review: { prompt:
   return <div className='modal-backdrop'><section className='assistant-review-modal'><div className='modal-head'><div><span className='eyebrow'>ASSISTANT REVIEW</span><h2>Review generated task</h2><p>Nothing will be changed until you apply this suggestion.</p></div><button onClick={onCancel}><X size={17} /></button></div><div className='assistant-prompt'><span>Prompt</span><strong>{review.prompt}</strong></div><div className='assistant-task-preview'><div className='catalog-icon'><review.task.icon size={19} /></div><div><strong>{review.task.name}</strong><span>{review.task.desc}</span><small>Task type · {review.task.kind}</small></div></div><div className='modal-actions'><button className='outline-button' onClick={onCancel}>Cancel</button><button className='primary-action' onClick={onApply}><Check size={14} /> Apply to draft</button></div></section></div>
 }
 
-function WorkflowList({ onOpen }: { onOpen: () => void }) {
+function WorkflowList({ onOpen, onImportJson }: { onOpen: (entry?: BuilderEntry) => void; onImportJson: (file?: File) => void }) {
   const workflows = [
     { name: 'api_polling_workflow', description: 'Poll a remote API until a condition is met.', version: 1, status: 'Published', updated: 'Just now', tasks: 10 },
     { name: 'endpoint_health_monitor', description: 'Monitor an HTTP endpoint and route health outcomes.', version: 3, status: 'Published', updated: '3 hours ago', tasks: 7 },
     { name: 'payment_and_subscription_flow', description: 'Process payment outcomes across multiple providers.', version: 12, status: 'Draft', updated: 'Yesterday', tasks: 18 },
   ]
   const [query, setQuery] = useState('')
+  const [entryMenu, setEntryMenu] = useState(false)
   const visible = workflows.filter((workflow) => `${workflow.name} ${workflow.description}`.toLowerCase().includes(query.toLowerCase()))
-  return <div className="workflow-list-page"><header className="list-topbar"><div className="brand-mark"><span className="brand-orb">◈</span><span>orkes</span></div><div className="list-top-actions"><button><Settings2 size={15} /> Settings</button><button className="primary-action" onClick={onOpen}><Plus size={15} /> New workflow</button></div></header><main className="workflow-list-main"><div className="list-heading"><div><span className="eyebrow">WORKSPACE / DEFAULT</span><h1>Workflow Definitions</h1><p>Design, validate and operate your orchestration workflows.</p></div><button className="outline-button" onClick={onOpen}><Plus size={15} /> Create workflow</button></div><div className="list-toolbar"><div className="list-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search workflows..." /></div><button className="filter-button">All workflows <ChevronDown size={14} /></button></div><div className="workflow-table"><div className="table-head"><span>Workflow</span><span>Version</span><span>Status</span><span>Updated</span><span>Tasks</span><span /></div>{visible.map((workflow) => <button className="workflow-row" key={workflow.name} onClick={onOpen}><span className="workflow-name"><span className="workflow-list-icon"><Workflow size={16} /></span><span><strong>{workflow.name}</strong><small>{workflow.description}</small></span></span><span>v{workflow.version}</span><span><em className={workflow.status.toLowerCase()}>{workflow.status}</em></span><span>{workflow.updated}</span><span>{workflow.tasks}</span><ChevronRight size={15} /></button>)}</div></main></div>
+  const selectEntry = (entry: BuilderEntry) => { setEntryMenu(false); onOpen(entry) }
+  return <div className="workflow-list-page"><header className="list-topbar"><div className="brand-mark"><span className="brand-orb">◈</span><span>orkes</span></div><div className="list-top-actions"><button><Settings2 size={15} /> Settings</button><div className="builder-entry-wrap"><button className="primary-action" onClick={() => setEntryMenu((open) => !open)}><Plus size={15} /> New workflow <ChevronDown size={13} /></button>{entryMenu && <div className="builder-entry-menu"><strong>Start with</strong><button onClick={() => selectEntry('blank')}><FileJson size={15} /><span><b>Create blank</b><small>Start with an empty graph</small></span></button><button onClick={() => selectEntry('template')}><Workflow size={15} /><span><b>Use template</b><small>Open the API polling example</small></span></button><label><ArrowDownToLine size={15} /><span><b>Import JSON</b><small>Load a Conductor definition</small></span><input type="file" accept=".json,application/json" onChange={(event) => { setEntryMenu(false); onImportJson(event.target.files?.[0]) }} /></label><button onClick={() => selectEntry('ai')}><Sparkles size={15} /><span><b>Generate with AI</b><small>Describe a workflow to the assistant</small></span></button></div>}</div></div></header><main className="workflow-list-main"><div className="list-heading"><div><span className="eyebrow">WORKSPACE / DEFAULT</span><h1>Workflow Definitions</h1><p>Design, validate and operate your orchestration workflows.</p></div><button className="outline-button" onClick={() => setEntryMenu((open) => !open)}><Plus size={15} /> Create workflow</button></div><div className="list-toolbar"><div className="list-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search workflows..." /></div><button className="filter-button">All workflows <ChevronDown size={14} /></button></div><div className="workflow-table"><div className="table-head"><span>Workflow</span><span>Version</span><span>Status</span><span>Updated</span><span>Tasks</span><span /></div>{visible.map((workflow) => <button className="workflow-row" key={workflow.name} onClick={() => onOpen('template')}><span className="workflow-name"><span className="workflow-list-icon"><Workflow size={16} /></span><span><strong>{workflow.name}</strong><small>{workflow.description}</small></span></span><span>v{workflow.version}</span><span><em className={workflow.status.toLowerCase()}>{workflow.status}</em></span><span>{workflow.updated}</span><span>{workflow.tasks}</span><ChevronRight size={15} /></button>)}</div></main></div>
 }
 
 function ValidationDrawer({ issues, onClose, onFocus }: { issues: Array<{ severity: 'error' | 'warning'; message: string; nodeId?: string }>; onClose: () => void; onFocus: (nodeId: string) => void }) {

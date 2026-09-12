@@ -134,3 +134,17 @@ test('pauses, resumes, and terminates a running execution', async ({ page }) => 
   await page.getByRole('button', { name: 'Terminate', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Execution terminated' })).toBeVisible()
 })
+
+test('supports the workflow builder entry options from the definitions list', async ({ page }) => {
+  await page.addInitScript(() => window.localStorage.clear())
+  await page.goto('/workflows')
+  await expect(page.getByRole('heading', { name: 'Workflow Definitions' })).toBeVisible()
+  await page.getByRole('button', { name: /New workflow/ }).click()
+  await expect(page.getByText('Create blank', { exact: true })).toBeVisible()
+  await expect(page.getByText('Use template', { exact: true })).toBeVisible()
+  await expect(page.getByText('Import JSON', { exact: true })).toBeVisible()
+  await expect(page.getByText('Generate with AI', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: /Create blank/ }).click()
+  await expect(page.getByText('new_workflow', { exact: true })).toBeVisible()
+  await expect(page.locator('.canvas-ribbon')).toContainText('0 tasks')
+})
