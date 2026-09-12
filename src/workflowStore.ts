@@ -15,6 +15,10 @@ export type TaskConfig = {
   url?: string
   headers?: string
   body?: string
+  accept?: string
+  contentType?: string
+  encode?: boolean
+  httpHedgingMaxAttempts?: number
   expression?: string
   cases?: string[]
   inputParameters?: string
@@ -46,11 +50,29 @@ export type TaskConfig = {
   eventName?: string
   eventPayload?: string
   serviceMethod?: string
+  grpcService?: string
+  grpcMethod?: string
+  grpcHost?: string
+  grpcPort?: number
+  grpcUseSSL?: boolean
+  grpcTrustCert?: boolean
+  grpcRequest?: string
+  grpcHeaders?: string
+  grpcInputType?: string
+  grpcMethodType?: string
+  grpcOutputType?: string
+  grpcHedgingMaxAttempts?: number
   integrationName?: string
+  schemaName?: string
   operation?: string
   script?: string
   jqQuery?: string
   ruleName?: string
+  ruleFileLocation?: string
+  executionStrategy?: string
+  inputColumns?: string
+  outputColumns?: string
+  cacheTimeoutMinutes?: number
   sqlQuery?: string
   assignee?: string
   formKey?: string
@@ -82,7 +104,6 @@ export type TaskConfig = {
   from?: string
   to?: string
   subjectLine?: string
-  contentType?: string
   content?: string
   sendgridConfiguration?: string
   alias?: string
@@ -112,6 +133,17 @@ export type TaskConfig = {
   variableValue?: string
   workflowId?: string
   joinOn?: string[]
+  kafkaTopic?: string
+  kafkaValue?: string
+  kafkaBootStrapServers?: string
+  kafkaHeaders?: string
+  kafkaKey?: string
+  kafkaKeySerializer?: string
+  secretKey?: string
+  secretValue?: string
+  databaseType?: 'SELECT' | 'UPDATE'
+  jdbcParameters?: string
+  expectedUpdateCount?: string
 }
 
 /** The serializable task shape used inside operator containers. */
@@ -270,24 +302,48 @@ export function buildTaskInputParameters(kind: TaskKind, config?: TaskConfig): R
   if (kind === 'HTTP') {
     set('uri', source.url)
     set('method', source.method ?? 'GET')
+    set('accept', source.accept)
+    set('contentType', source.contentType)
     set('headers', parseConfigValue(source.headers))
     set('body', parseConfigValue(source.body))
+    set('encode', source.encode)
+    if (source.httpHedgingMaxAttempts != null) set('hedgingConfig', { maxAttempts: source.httpHedgingMaxAttempts })
   }
   if (kind === 'HTTP_POLL') {
     const request = params.http_request && typeof params.http_request === 'object' && !Array.isArray(params.http_request) ? { ...(params.http_request as Record<string, unknown>) } : {}
     if (source.url) request.uri = source.url
     request.method = source.method ?? request.method ?? 'GET'
+    if (source.accept) request.accept = source.accept
+    if (source.contentType) request.contentType = source.contentType
+    if (source.headers) request.headers = parseConfigValue(source.headers)
+    if (source.body) request.body = parseConfigValue(source.body)
+    if (source.encode != null) request.encode = source.encode
+    if (source.httpHedgingMaxAttempts != null) request.hedgingConfig = { maxAttempts: source.httpHedgingMaxAttempts }
     if (source.pollCondition) request.terminationCondition = source.pollCondition
     if (source.pollIntervalSeconds != null) request.pollingInterval = String(source.pollIntervalSeconds)
     request.pollingStrategy = request.pollingStrategy ?? 'FIXED'
     params.http_request = request
   }
-  if (kind === 'EVENT' || kind === 'KAFKA_PUBLISH' || kind === 'WAIT_FOR_EVENT') { set('sink', source.eventName); set('eventPayload', parseConfigValue(source.eventPayload)) }
-  if (kind === 'GRPC') set('serviceMethod', source.serviceMethod)
+  if (kind === 'EVENT' || kind === 'WAIT_FOR_EVENT') { set('sink', source.eventName); set('eventPayload', parseConfigValue(source.eventPayload)) }
+  if (kind === 'KAFKA_PUBLISH') set('kafka_request', { topic: source.kafkaTopic ?? source.eventName, value: source.kafkaValue ?? source.eventPayload, bootStrapServers: source.kafkaBootStrapServers, headers: parseConfigValue(source.kafkaHeaders), key: source.kafkaKey, keySerializer: source.kafkaKeySerializer })
+  if (kind === 'GRPC') {
+    set('service', source.grpcService)
+    set('method', source.grpcMethod ?? source.serviceMethod)
+    set('host', source.grpcHost)
+    set('port', source.grpcPort)
+    set('useSSL', source.grpcUseSSL)
+    set('trustCert', source.grpcTrustCert)
+    set('request', parseConfigValue(source.grpcRequest))
+    set('headers', parseConfigValue(source.grpcHeaders))
+    set('inputType', source.grpcInputType)
+    set('methodType', source.grpcMethodType)
+    set('outputType', source.grpcOutputType)
+    if (source.grpcHedgingMaxAttempts != null) set('hedgingConfig', { maxAttempts: source.grpcHedgingMaxAttempts })
+  }
   if (kind === 'INLINE') { set('expression', source.script); set('evaluatorType', 'graaljs') }
   if (kind === 'JSON_JQ_TRANSFORM') set('queryExpression', source.jqQuery)
-  if (kind === 'BUSINESS_RULE') set('ruleName', source.ruleName)
-  if (kind === 'SQL' || kind === 'JDBC') { set('integrationName', source.integrationName); set('statement', source.sqlQuery); set('type', 'SELECT') }
+  if (kind === 'BUSINESS_RULE') { set('ruleFileLocation', source.ruleFileLocation); set('executionStrategy', source.executionStrategy ?? 'FIRE_FIRST'); set('inputColumns', parseConfigValue(source.inputColumns)); set('outputColumns', parseConfigValue(source.outputColumns)); set('cacheTimeoutMinutes', source.cacheTimeoutMinutes) }
+  if (kind === 'SQL' || kind === 'JDBC') { set('integrationName', source.integrationName); set('schemaName', source.schemaName); set('statement', source.sqlQuery); set('parameters', parseConfigValue(source.jdbcParameters)); set('type', source.databaseType ?? 'SELECT'); set('expectedUpdateCount', source.expectedUpdateCount) }
   if (kind === 'HUMAN') { set('__humanTaskDefinition', { assignmentCompletionStrategy: 'LEAVE_OPEN', assignments: source.assignee ? [{ assignee: source.assignee }] : [], formKey: source.formKey }) }
   if (kind === 'FORK_JOIN') set('forkTasks', source.forkBranches)
   if (kind === 'FORK_JOIN_DYNAMIC') { set('dynamicForkTasksParam', source.dynamicForkTasksParam); set('dynamicForkTasksInputParamName', source.dynamicForkTasksInputParamName) }
@@ -301,6 +357,7 @@ export function buildTaskInputParameters(kind: TaskKind, config?: TaskConfig): R
   if (kind === 'SET_VARIABLE') { set('name', source.variableName); set('value', source.variableValue) }
   if (kind === 'GET_WORKFLOW') { set('id', source.workflowId); set('includeTasks', false) }
   if (kind === 'GET_SIGNED_JWT') { ;(['subject', 'issuer', 'privateKey', 'privateKeyId', 'audience', 'ttlInSecond', 'scopes', 'algorithm'] as const).forEach((key) => set(key, source[key])) }
+  if (kind === 'UPDATE_SECRET') set('_secrets', { secretKey: source.secretKey, secretValue: source.secretValue })
   if (kind === 'UPDATE_TASK') { ;(['taskStatus', 'taskRefName', 'mergeOutput', 'workflowId'] as const).forEach((key) => set(key, source[key])) }
   if (kind === 'QUERY_PROCESSOR') { ;(['workflowNames', 'statuses', 'correlationIds', 'queryType'] as const).forEach((key) => set(key, source[key])) }
   if (kind === 'OPS_GENIE') { set('alias', source.alias); set('message', source.content); set('description', source.description) }
