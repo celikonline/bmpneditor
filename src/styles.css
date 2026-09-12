@@ -273,6 +273,7 @@ button:disabled { cursor: default; }
 .bpmn-xml-input:focus { border-color: #4794e6; box-shadow: 0 0 0 3px rgba(71,148,230,.12); }
 
 /* Platform pages mirror the supporting Conductor screens around the workflow editor. */
+.filter-button select { border: 0; outline: 0; background: transparent; color: #607488; font-size: 12px; }
 .platform-shell { min-height: 100vh; display: flex; background: #f6f8fa; color: #263c50; }
 .platform-main { flex: 1; min-width: 0; overflow: auto; }
 .platform-page { max-width: 1380px; margin: 0 auto; padding: 38px 44px 64px; }

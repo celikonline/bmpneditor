@@ -195,6 +195,14 @@ test('supports the workflow builder entry options from the definitions list', as
   await expect(page.locator('.canvas-ribbon')).toContainText('0 tasks')
 })
 
+test('filters workflow definitions by lifecycle status', async ({ page }) => {
+  await page.addInitScript(() => window.localStorage.clear())
+  await page.goto('/workflows')
+  await page.getByLabel('Workflow status filter').selectOption('DRAFT')
+  await expect(page.getByText('payment_and_subscription_flow', { exact: true })).toBeVisible()
+  await expect(page.getByText('api_polling_workflow', { exact: true })).not.toBeVisible()
+})
+
 test('imports raw BPMN XML through the conversion review dialog', async ({ page }) => {
   await page.addInitScript(() => window.localStorage.clear())
   await page.goto('/')
