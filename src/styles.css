@@ -294,6 +294,10 @@ button:disabled { cursor: default; }
 .platform-table-row strong, .platform-table-row small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .platform-table-row strong { color: #344e64; font-size: 11px; }
 .platform-table-row small { margin-top: 4px; color: #9aa7b2; font-size: 9px; }
+.row-inline-actions { display: flex !important; align-items: center; justify-content: space-between; gap: 7px; overflow: visible !important; }
+.row-inline-actions > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-inline-actions .icon-button { flex: 0 0 auto; color: #b27a84; }
+.inline-status-button { display: inline-flex; justify-content: flex-start; padding: 0; border: 0; background: transparent; }
 .rotate-180 { transform: rotate(180deg); color: #a6b2bc; }
 .platform-status { display: inline-block; padding: 4px 8px; border-radius: 999px; background: #edf2f5; color: #6f8291; font-size: 9px; font-style: normal; font-weight: 600; letter-spacing: .03em; }
 .platform-status.completed, .platform-status.processed, .platform-status.active { background: #e7f7ef; color: #398d68; }

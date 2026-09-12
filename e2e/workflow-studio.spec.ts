@@ -212,6 +212,29 @@ test('navigates the supporting Conductor platform screens from the sidebar', asy
   await expect(page.getByRole('heading', { name: 'Users', exact: true })).toBeVisible()
 })
 
+test('creates and removes task definitions and schedules', async ({ page }) => {
+  await page.addInitScript(() => window.localStorage.clear())
+  await page.goto('/taskDefs')
+  await page.getByRole('button', { name: 'New task definition', exact: true }).click()
+  await page.getByLabel('Name').fill('email_worker')
+  await page.getByLabel('Description').fill('Sends notification email')
+  await page.getByLabel('Retry logic').selectOption('EXPONENTIAL_BACKOFF')
+  await page.getByLabel('Backoff jitter (ms)').fill('250')
+  await page.getByRole('button', { name: 'Save definition', exact: true }).click()
+  await expect(page.getByText('email_worker', { exact: true })).toBeVisible()
+  page.once('dialog', (dialog) => dialog.accept())
+  await page.getByRole('button', { name: 'Delete task definition email_worker', exact: true }).click()
+  await expect(page.getByText('email_worker', { exact: true })).not.toBeVisible()
+
+  await page.getByRole('button', { name: 'Scheduler' }).last().click()
+  await page.getByRole('button', { name: 'New schedule', exact: true }).click()
+  await page.getByLabel('Name').fill('hourly_email')
+  await page.getByLabel('Cron expression').fill('0 0 * * * *')
+  await page.getByLabel('Catch up missed runs').check()
+  await page.getByRole('button', { name: 'Save schedule', exact: true }).click()
+  await expect(page.getByText('hourly_email', { exact: true })).toBeVisible()
+})
+
 test('runs a workflow from the platform Run Workflow screen', async ({ page }) => {
   await page.addInitScript(() => window.localStorage.clear())
   await page.goto('/runWorkflow')

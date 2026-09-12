@@ -8,9 +8,9 @@ export type ExecutionStatus = 'RUNNING' | 'PAUSED' | 'COMPLETED' | 'TIMED_OUT' |
 export type RealtimeExecutionEvent = { type: 'workflow.started' | 'workflow.completed' | 'workflow.failed' | 'task.scheduled' | 'task.started' | 'task.completed' | 'task.retrying'; executionId: string; taskReferenceName?: string; at: string; status?: ExecutionStatus }
 export type ExecutionRecord = { executionId: string; workflowName: string; version: number; status: ExecutionStatus; input: unknown; events: ExecutionTaskEvent[]; startedAt: string; completedAt?: string; correlationId?: string; priority?: number; executionName?: string; metadata?: Record<string, string>; idempotencyKey?: string; tasks?: StudioNode[] }
 export type WorkflowDefinitionRecord = { name: string; description: string; version: number; status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED'; updatedAt: string; taskCount: number; workflow?: WorkflowSettings; nodes?: StudioNode[]; edges?: Edge[] }
-export type TaskDefinitionRecord = { name: string; description: string; owner: string; timeoutSeconds: number; retryCount: number; updatedAt: string; status: 'ACTIVE' | 'PAUSED' }
+export type TaskDefinitionRecord = { name: string; description: string; owner: string; timeoutSeconds: number; retryCount: number; retryLogic?: 'FIXED' | 'EXPONENTIAL_BACKOFF' | 'LINEAR_BACKOFF'; retryDelaySeconds?: number; maxRetryDelaySeconds?: number; backoffJitterMs?: number; totalTimeoutSeconds?: number; responseTimeoutSeconds?: number; pollTimeoutSeconds?: number; updatedAt: string; status: 'ACTIVE' | 'PAUSED' }
 export type EventHandlerRecord = { name: string; event: string; action: string; workflowName: string; active: boolean; updatedAt: string }
-export type ScheduleRecord = { name: string; workflowName: string; cronExpression: string; timezone: string; active: boolean; nextRun: string; updatedAt: string }
+export type ScheduleRecord = { name: string; workflowName: string; cronExpression: string; timezone: string; active: boolean; nextRun: string; catchUp: boolean; overlapPolicy: 'ALLOW' | 'SKIP'; startTime?: string; endTime?: string; updatedAt: string }
 export type QueueRecord = { queue: string; taskType: string; inProgress: number; unprocessed: number; rateLimit: number; updatedAt: string }
 export type EventRecord = { id: string; event: string; status: 'RECEIVED' | 'PROCESSED' | 'FAILED'; source: string; receivedAt: string; payload: unknown }
 
@@ -88,8 +88,8 @@ export const workflowApi = {
 
   listTaskDefinitions(): Promise<TaskDefinitionRecord[]> {
     return Promise.resolve(readStored<TaskDefinitionRecord>(taskDefinitionStorageKey, [
-      { name: 'http_request', description: 'Invoke an external HTTP endpoint.', owner: 'platform', timeoutSeconds: 60, retryCount: 3, updatedAt: 'Today', status: 'ACTIVE' },
-      { name: 'check_status', description: 'Poll and evaluate a job status.', owner: 'platform', timeoutSeconds: 30, retryCount: 2, updatedAt: 'Yesterday', status: 'ACTIVE' },
+      { name: 'http_request', description: 'Invoke an external HTTP endpoint.', owner: 'platform', timeoutSeconds: 60, retryCount: 3, retryLogic: 'EXPONENTIAL_BACKOFF', retryDelaySeconds: 2, maxRetryDelaySeconds: 60, backoffJitterMs: 250, totalTimeoutSeconds: 300, responseTimeoutSeconds: 30, updatedAt: 'Today', status: 'ACTIVE' },
+      { name: 'check_status', description: 'Poll and evaluate a job status.', owner: 'platform', timeoutSeconds: 30, retryCount: 2, retryLogic: 'FIXED', retryDelaySeconds: 1, pollTimeoutSeconds: 900, updatedAt: 'Yesterday', status: 'ACTIVE' },
     ]))
   },
 
@@ -97,6 +97,13 @@ export const workflowApi = {
     const items = readStored<TaskDefinitionRecord>(taskDefinitionStorageKey, [])
     writeStored(taskDefinitionStorageKey, [...items.filter((item) => item.name !== definition.name), definition])
     return Promise.resolve(definition)
+  },
+
+  deleteTaskDefinition(name: string) {
+    const items = readStored<TaskDefinitionRecord>(taskDefinitionStorageKey, [])
+    if (!items.some((item) => item.name === name)) return Promise.reject(new Error(`Task definition "${name}" was not found.`))
+    writeStored(taskDefinitionStorageKey, items.filter((item) => item.name !== name))
+    return Promise.resolve()
   },
 
   listEventHandlers(): Promise<EventHandlerRecord[]> {
@@ -112,17 +119,32 @@ export const workflowApi = {
     return Promise.resolve(handler)
   },
 
+  deleteEventHandler(name: string) {
+    const items = readStored<EventHandlerRecord>(eventHandlerStorageKey, [])
+    if (!items.some((item) => item.name === name)) return Promise.reject(new Error(`Event handler "${name}" was not found.`))
+    writeStored(eventHandlerStorageKey, items.filter((item) => item.name !== name))
+    return Promise.resolve()
+  },
+
   listSchedules(): Promise<ScheduleRecord[]> {
-    return Promise.resolve(readStored<ScheduleRecord>(scheduleStorageKey, [
-      { name: 'health_monitor_every_5m', workflowName: 'endpoint_health_monitor', cronExpression: '0 */5 * * * *', timezone: 'UTC', active: true, nextRun: 'In 4 minutes', updatedAt: 'Today' },
-      { name: 'billing_daily', workflowName: 'payment_and_subscription_flow', cronExpression: '0 0 8 * * *', timezone: 'Europe/Istanbul', active: false, nextRun: 'Paused', updatedAt: 'Yesterday' },
-    ]))
+    const records = readStored<ScheduleRecord>(scheduleStorageKey, [
+      { name: 'health_monitor_every_5m', workflowName: 'endpoint_health_monitor', cronExpression: '0 */5 * * * *', timezone: 'UTC', active: true, nextRun: 'In 4 minutes', catchUp: false, overlapPolicy: 'SKIP', updatedAt: 'Today' },
+      { name: 'billing_daily', workflowName: 'payment_and_subscription_flow', cronExpression: '0 0 8 * * *', timezone: 'Europe/Istanbul', active: false, nextRun: 'Paused', catchUp: true, overlapPolicy: 'ALLOW', updatedAt: 'Yesterday' },
+    ])
+    return Promise.resolve(records.map((item) => ({ ...item, catchUp: item.catchUp ?? false, overlapPolicy: item.overlapPolicy ?? 'SKIP' as const })))
   },
 
   saveSchedule(schedule: ScheduleRecord) {
     const items = readStored<ScheduleRecord>(scheduleStorageKey, [])
     writeStored(scheduleStorageKey, [...items.filter((item) => item.name !== schedule.name), schedule])
     return Promise.resolve(schedule)
+  },
+
+  deleteSchedule(name: string) {
+    const items = readStored<ScheduleRecord>(scheduleStorageKey, [])
+    if (!items.some((item) => item.name === name)) return Promise.reject(new Error(`Schedule "${name}" was not found.`))
+    writeStored(scheduleStorageKey, items.filter((item) => item.name !== name))
+    return Promise.resolve()
   },
 
   listQueues(): Promise<QueueRecord[]> {
