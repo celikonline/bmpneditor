@@ -213,6 +213,20 @@ test('opens the global command palette with Ctrl+K', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Queue Monitor', exact: true })).toBeVisible()
 })
 
+test('supports keyboard navigation and builder actions in the command palette', async ({ page }) => {
+  await page.addInitScript(() => window.localStorage.clear())
+  await page.goto('/')
+  await page.keyboard.press('Control+k')
+  await page.getByPlaceholder('Search commands...').fill('Add HTTP Task')
+  await page.keyboard.press('Enter')
+  await expect(page.locator('.task-node').filter({ hasText: 'http_task' })).toHaveCount(1)
+  await page.keyboard.press('Control+k')
+  await page.getByPlaceholder('Search commands...').fill('Open Code')
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('button', { name: 'Code', exact: true })).toHaveClass(/active/)
+})
+
 test('uses advanced execution date filters', async ({ page }) => {
   await page.addInitScript(() => window.localStorage.clear())
   await page.goto('/executions')
